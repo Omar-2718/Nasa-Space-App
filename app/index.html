@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beneath the Sand</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">◐</span> Beneath the Sand</div>
+  <nav>
+    <button data-view="xray" class="active">X-ray the desert</button>
+    <button data-view="farms">Living desert</button>
+    <button data-view="story">The story</button>
+  </nav>
+</header>
+
+<main>
+  <aside class="panel">
+    <section data-panel="xray" class="active">
+      <p class="eyebrow">Part 1</p>
+      <h1>See under the sand</h1>
+      <p>NISAR's L-band radar uses 24 cm waves. In hyper-dry sand they travel 1–2 m down and bounce off the rock and gravel beneath. Drag the white line on the map: left is a satellite photo, right is NISAR.</p>
+      <label class="field">Site
+        <select id="site"></select>
+      </label>
+      <label class="field">Radar view
+        <select id="pol">
+          <option value="hh">HH: rock and gravel, best for buried channels</option>
+          <option value="hv">HV: rough or vegetated surfaces</option>
+          <option value="rgb">Colour mix (HH / HV / HH−HV)</option>
+        </select>
+      </label>
+      <label class="field">Radar opacity <input id="opacity" type="range" min="0" max="100" value="100"></label>
+      <div class="callout" id="siteNote"></div>
+    </section>
+
+    <section data-panel="farms">
+      <p class="eyebrow">Part 2</p>
+      <h1>The living desert</h1>
+      <p>New farms at Toshka sit above water left by the same ancient rivers. Green shows a strong HV signal: leaves and stems scatter the radar back. Press play to watch fields being planted in autumn 2026.</p>
+      <div class="player">
+        <button id="play" class="primary">Play</button>
+        <input id="time" type="range" min="0" value="0" aria-label="Date">
+        <span id="date" class="date"></span>
+      </div>
+      <p class="hint">Click any field on the map to plot its season.</p>
+      <canvas id="chart" height="190"></canvas>
+      <div class="stats" id="stats"></div>
+    </section>
+
+    <section data-panel="story">
+      <p class="eyebrow">The story</p>
+      <h1>45 years under the sand</h1>
+      <ol class="timeline">
+        <li><b>1981</b> The Space Shuttle's SIR-A radar flies over the Egypt–Sudan border and reveals river valleys buried under the Selima Sand Sheet.</li>
+        <li><b>2024</b> Radar and soil cores map the lost Ahramat branch of the Nile running past the pyramids of Giza.</li>
+        <li><b>2025</b> NASA and ISRO launch NISAR, with an L-band radar at almost the same wavelength as SIR-A.</li>
+        <li><b>2026</b> NISAR images every point in Egypt every 12 days, free for anyone.</li>
+      </ol>
+      <h2>Why it matters</h2>
+      <ul>
+        <li><b>Water:</b> buried channels can hold groundwater and guide where to drill.</li>
+        <li><b>Archaeology:</b> ancient settlements followed rivers.</li>
+        <li><b>Farming:</b> track which new desert farms are active, season by season.</li>
+      </ul>
+      <p class="muted small">Data: NISAR L2 GCOV (provisional), NASA ASF DAAC. Basemap: Esri World Imagery. The Bir Safsaf channels are known from 1981 research; we reveal them again, we don't claim a new discovery.</p>
+    </section>
+  </aside>
+
+  <div class="mapwrap">
+    <div id="mapA" class="map"></div>
+    <div id="mapB" class="map"></div>
+    <div id="swipe" class="swipe"><span>⟷</span></div>
+    <div class="tag l" id="tagL">Satellite photo</div>
+    <div class="tag r" id="tagR">NISAR radar</div>
+  </div>
+</main>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
