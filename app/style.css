@@ -37,7 +37,7 @@ input[type=range]{accent-color:var(--accent)}
 .timeline{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:8px}
 .timeline b{color:var(--accent);margin-right:6px}
 ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
-.mapwrap{position:relative;flex:1;min-width:0}
+.mapwrap{position:relative;flex:1;min-width:0;overflow:hidden}
 .map{position:absolute;inset:0}
 #mapB{clip-path:inset(0 0 0 var(--pos,50%))}
 .swipe{position:absolute;top:0;bottom:0;left:var(--pos,50%);width:4px;margin-left:-2px;background:#fff;cursor:ew-resize;z-index:5;touch-action:none}
@@ -51,3 +51,14 @@ body.noswipe .swipe,body.noswipe .tag{display:none}
   .panel{width:auto;max-height:45vh;border-right:0;border-bottom:1px solid var(--line)}
   .mapwrap{min-height:55vh}
 }
+.mapwrap.animate #mapB{transition:clip-path .9s ease}
+.mapwrap.animate .swipe{transition:left .9s ease}
+.player button:not(.primary){background:none;border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:8px 14px;font:600 13px var(--body);cursor:pointer}
+.player button:disabled{opacity:.4;cursor:default}
+.dots{display:flex;gap:6px}
+.dots i{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.dots i.on{background:var(--accent)}
+.check{display:flex;align-items:center;gap:8px;font-weight:600}
+.swatch{width:22px;height:4px;border-radius:2px;background:#bff3ff;box-shadow:0 0 6px #2fd3ff}
+.stat b{color:#bff3ff}
+@media (prefers-reduced-motion:reduce){.mapwrap.animate #mapB,.mapwrap.animate .swipe{transition:none}}
