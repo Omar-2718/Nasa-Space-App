@@ -66,7 +66,7 @@ const TOUR = [
     text: 'NISAR sends 24 cm radio waves. Dry sand is almost transparent to them, so they reach the rock and gravel 1–2 m below and bounce back. The hidden landscape appears.' },
   { title: 'Rivers under the sand', pos: 0, rivers: true, cam: { center: [29.3, 22.66], zoom: 10.2 },
     text: 'The shaded band is a buried river valley, kilometres wide. The blue lines are smaller channels feeding it. Fine sediment in the old riverbeds looks dark to the radar. We traced them automatically. They flowed when the Sahara was green, thousands of years ago.' },
-  { title: 'Invisible to the eye', pos: 50, rivers: true, cam: { center: [29.12, 22.6], zoom: 11.2 },
+  { title: 'Invisible to the eye', pos: 50, rivers: true, cam: { center: [29.33, 22.66], zoom: 10.8 },
     text: 'Drag the white line back and forth. Where the radar shows rivers, the photo shows only featureless sand. Without radar, nobody would know they are there.' },
   { title: '1981 → 2026', pos: 50, rivers: true, cam: 'all',
     text: 'The Space Shuttle first glimpsed these rivers in 1981, on a single flight. NISAR now sees them every 12 days, free for anyone. Next: scan the whole Western Desert for channels nobody has mapped, and point water and archaeology teams to them.' },
