@@ -48,14 +48,13 @@ Datasets are not in git. Without data the app still runs and shows "add radar" s
 | `prisma` errors about the database | `docker compose up -d db` and wait a few seconds, then `./dev.sh` again |
 | "No NASA Earthdata login" in the app | create `~/.netrc` as in step 3B |
 | "NISAR has no dual-polarisation data here yet" | NASA hasn't released that area yet; try squares next to existing radar |
-| Start from an empty database | `docker compose down -v` (deletes all tags!), then `./dev.sh` |
+| Start from an empty database | `docker compose down -v` (deletes the database), then `./dev.sh` |
 
 ### Optional: the AI model (AI person only)
 ```bash
 .venv/bin/pip install -r ml/requirements.txt   # PyTorch, about 2.5 GB: download at home
 .venv/bin/python ml/train.py                   # about 1.5 min on an RTX 3050
 ```
-Team gold labels: open http://localhost:5173/?admin#tag (admin key: `ADMIN_KEY` env var, default `sand-admin`).
 
 ## Layout
 | Folder | What | Owner |
