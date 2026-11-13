@@ -2,11 +2,15 @@
 // and on-demand radar downloads.
 import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
-import { api, SAT_STYLE, setBasemap, pct, type Stats, type AreaJob, type Basemap } from '../api';
+import { api, sessionId, SAT_STYLE, setBasemap, pct, type Stats, type AreaJob, type Basemap, type Label, type Reveal } from '../api';
+
+const TAGS: { label: Label; text: string }[] = [
+  { label: 'channel', text: 'Buried river here' }, { label: 'nothing', text: 'No river' }, { label: 'unsure', text: 'Not sure' }];
 
 type RiverStats = { km: number; channels: number; valleys: number };
 const LAYERS = [
-  { id: 'rivers', text: 'Buried rivers (traced from radar)', sw: '#38d6ff' },
+  { id: 'rivers', text: 'Buried rivers: channels + riverbeds', sw: '#38d6ff' },
+  { id: 'crowd', text: 'Squares people checked (brighter = more said river)', sw: 'linear-gradient(90deg,#5a4a7a,#c48bff)' },
   { id: 'ai', text: 'AI river likelihood per square', sw: 'linear-gradient(90deg,#4a3420,#ffaa3c)' },
   { id: 'radar', text: 'NISAR radar', sw: '#888' },
   { id: 'sites', text: 'Known sites (places people lived, not rivers)', sw: '#ff5c8a' },
@@ -59,8 +63,19 @@ export default function LiveMap() {
   };
   const [stats, setStats] = useState<Stats>();
   const [rs, setRs] = useState<RiverStats>();
-  const [on, setOn] = useState<Record<string, boolean>>({ rivers: true, ai: false, radar: true, sites: true });
+  const [on, setOn] = useState<Record<string, boolean>>({ rivers: true, crowd: true, ai: false, radar: true, sites: true });
   const [sel, setSel] = useState<Record<string, unknown> | null>(null);
+  // tag the clicked square right here: your answer, then what the AI and other people said
+  const [mine, setMine] = useState<{ label: Label; reveal: Reveal } | null>(null);
+  const selAt = useRef(0);
+  useEffect(() => { setMine(null); selAt.current = performance.now(); }, [sel]);
+  const tagSel = async (label: Label) => {
+    if (!sel || mine) return;
+    const r = await api.tag({ sessionId: await sessionId(), patchId: String(sel.id), label, ms: Math.round(performance.now() - selAt.current) });
+    setMine({ label, reveal: r.reveal });
+    const cons = await api.consensus(); patchesRef.current = cons;
+    (map.current?.getSource('patches') as maplibregl.GeoJSONSource | undefined)?.setData(cons); api.stats().then(setStats);
+  };
   const [base, setBase] = useState<Basemap>('s2');
   const [siteList, setSiteList] = useState<GeoJSON.Feature[]>([]);
   useEffect(() => { const m = map.current; if (m?.getLayer('s2')) setBasemap(m, base); }, [base]);
@@ -131,7 +146,11 @@ export default function LiveMap() {
         m.addLayer({ id: 'radar', type: 'raster', source: 'radar', paint: { 'raster-opacity': .9, 'raster-fade-duration': 0 } });
       }
       m.addSource('patches', { type: 'geojson', data: cons }); patchesRef.current = cons;
-      const pts = cons.features.flatMap(f => (f.geometry as GeoJSON.Polygon).coordinates[0]);
+      // open on the main block of radar: patches within ~3° of the median centre (one far-off square shouldn't zoom out the map)
+      const cs = cons.features.map(f => (f.geometry as GeoJSON.Polygon).coordinates[0][0]);
+      const med = (v: number[]) => [...v].sort((x, y) => x - y)[Math.floor(v.length / 2)] ?? 0;
+      const mx = med(cs.map(c => c[0])), my = med(cs.map(c => c[1]));
+      const pts = cons.features.flatMap(f => (f.geometry as GeoJSON.Polygon).coordinates[0]).filter(c => Math.abs(c[0] - mx) < 3 && Math.abs(c[1] - my) < 3);
       if (pts.length) m.fitBounds([[Math.min(...pts.map(p => p[0])), Math.min(...pts.map(p => p[1]))], [Math.max(...pts.map(p => p[0])), Math.max(...pts.map(p => p[1]))]], { padding: 30, duration: 0 });
       m.addLayer({ id: 'ai', type: 'fill', source: 'patches', layout: { visibility: 'none' }, paint: {
         'fill-color': ['interpolate', ['linear'], ['coalesce', ['get', 'ai'], ['get', 'tracer']], 0, '#4a3420', 1, '#ffaa3c'],
@@ -145,6 +164,9 @@ export default function LiveMap() {
       m.addLayer({ id: 'rivers', type: 'line', source: 'rivers', filter: ['==', ['get', 'kind'], 'channel'], layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': '#9beeff', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1, 13, 3],
                  'line-opacity': ['interpolate', ['linear'], ['coalesce', ['get', 'len_km'], 1], 1, 0.55, 5, 1] } });
+      m.addLayer({ id: 'crowd', type: 'fill', source: 'patches', filter: ['>', ['get', 'votes'], 0], paint: {
+        'fill-color': ['interpolate', ['linear'], ['coalesce', ['get', 'channelShare'], 0], 0, '#5a4a7a', 1, '#c48bff'], 'fill-opacity': 0.35 } }, 'valleys');
+      m.addLayer({ id: 'hit', type: 'fill', source: 'patches', paint: { 'fill-color': '#000', 'fill-opacity': 0 } });   // whole square clickable
       m.addLayer({ id: 'outline', type: 'line', source: 'patches', paint: { 'line-color': ['case', ['get', 'modern'], '#e9786b', '#ffffff'], 'line-opacity': ['case', ['get', 'modern'], 0.8, 0.2], 'line-width': 0.8 } });
       m.addSource('sites', { type: 'geojson', data: sites }); setSiteList(sites.features);
       m.addLayer({ id: 'sites', type: 'circle', source: 'sites', paint: { 'circle-radius': 7, 'circle-color': '#ff5c8a', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
@@ -153,7 +175,7 @@ export default function LiveMap() {
         return new maplibregl.Marker({ element: el, anchor: 'top', offset: [0, 10] }).setLngLat((f.geometry as GeoJSON.Point).coordinates as [number, number]).addTo(m);
       });
       m.on('moveend', updateHiRes); updateHiRes();
-      m.on('click', 'outline', e => { if (!pickingRef.current) setSel(e.features?.[0]?.properties ?? null); });
+      m.on('click', 'hit', e => { if (!pickingRef.current) setSel(e.features?.[0]?.properties ?? null); });
       m.on('click', e => { if (pickingRef.current) onPick(+e.lngLat.lng.toFixed(5), +e.lngLat.lat.toFixed(5)); });
       m.on('click', 'sites', e => { const p = e.features?.[0]?.properties; if (p) sitePopup(m, p, e.lngLat); });
     });
@@ -180,10 +202,10 @@ export default function LiveMap() {
       <aside className="panel">
         <p className="eyebrow">Live map</p>
         <h1>Where the buried rivers are</h1>
-        <p className="muted small">Blue lines are old river channels traced from NISAR L-band radar, which sees through dry sand. Blue areas are wide buried valleys. These are candidates for experts to check, not confirmed finds.</p>
+        <p className="muted small">Everything blue is one thing: buried rivers, traced from NISAR L-band radar, which sees through dry sand. Thin lines are narrow channels; filled areas are wide old riverbeds (valleys) the rivers cut. These are candidates for experts to check, not confirmed finds.</p>
         <div className="stats">
           <div className="stat"><b>{rs ? rs.km.toLocaleString() : '–'}</b><span>km of buried channels</span></div>
-          <div className="stat"><b>{rs?.valleys ?? '–'}</b><span>buried valleys</span></div>
+          <div className="stat"><b>{rs?.valleys ?? '–'}</b><span>wide old riverbeds</span></div>
           <div className="stat"><b>{stats?.patches ?? '–'}</b><span>5 km squares with radar</span></div>
           <div className="stat"><b>{siteList.length || '–'}</b><span>known sites</span></div>
         </div>
@@ -206,7 +228,7 @@ export default function LiveMap() {
               {siteList.map((f, i) => <option key={i} value={i}>{String(f.properties?.name)}</option>)}
             </select>
           </label>
-          <span className="muted small">Red outlines: modern farms (their lines are hidden, they're irrigation, not rivers).</span>
+          <span className="muted small">Click any square to tag it. Red outlines: modern farms (their lines are hidden, they're irrigation, not rivers).</span>
         </div>
         <div className="card addcard">
           <h2>Add radar for an area</h2>
@@ -248,7 +270,22 @@ export default function LiveMap() {
           <div className="card">
             <h2>Patch {String(sel.id)}</h2>
             <img src={`/patches/${sel.id}_radar.png`} alt="" style={{ width: '100%', borderRadius: 6 }} />
-            <p className="small">River likelihood: {sel.ai !== null && sel.ai !== 'null' ? `AI ${pct(Number(sel.ai))}` : `Tracer ${pct(Number(sel.tracer))}`}{String(sel.modern) === 'true' ? ' · modern farm' : ''}</p>
+            {!mine ? (
+              <>
+                <p className="small">Do you see a buried river in this square? Narrow winding lines (channels) and wide smooth dark bands (old riverbeds) both count. Straight lines are usually rock cracks or tracks.</p>
+                <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+                  {TAGS.map(t => <button key={t.label} className={t.label === 'channel' ? 'primary' : ''} onClick={() => tagSel(t.label)}>{t.text}</button>)}
+                </div>
+              </>
+            ) : (
+              <p className="small">
+                You said <b>{TAGS.find(t => t.label === mine.label)?.text.toLowerCase()}</b>.{' '}
+                {mine.reveal.ai !== null ? `AI: ${pct(mine.reveal.ai)} river.` : `Tracer: ${pct(mine.reveal.tracer)} river.`}{' '}
+                {mine.reveal.crowd.channelShare !== null ? `People: ${pct(mine.reveal.crowd.channelShare)} river (${mine.reveal.crowd.votes} votes).` : ''}
+                {mine.reveal.gold && <> {mine.reveal.gold.correct ? <span className="ok">Matches the team's answer.</span> : <span className="no">The team's answer differs.</span>}</>}
+              </p>
+            )}
+            {String(sel.modern) === 'true' && <p className="muted small">Modern farm square.</p>}
           </div>
         )}
       </aside>
