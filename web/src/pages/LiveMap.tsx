@@ -9,7 +9,7 @@ const LAYERS = [
   { id: 'rivers', text: 'Buried rivers (traced from radar)', sw: '#38d6ff' },
   { id: 'ai', text: 'AI river likelihood per square', sw: 'linear-gradient(90deg,#4a3420,#ffaa3c)' },
   { id: 'radar', text: 'NISAR radar', sw: '#888' },
-  { id: 'sites', text: 'Known archaeological sites', sw: '#ff5c8a' },
+  { id: 'sites', text: 'Known sites (places people lived, not rivers)', sw: '#ff5c8a' },
 ] as const;
 
 const sitePopup = (m: maplibregl.Map, p: Record<string, unknown>, at: maplibregl.LngLatLike) =>
