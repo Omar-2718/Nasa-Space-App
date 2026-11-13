@@ -1,0 +1,6 @@
+{
+  "note": "Patches covering modern infrastructure (centre-pivot farms, roads), mapped by hand from the NISAR radar on 2026-11-13. An automatic straight-line detector was tried and did not separate farms from natural terrain. These patches are excluded from survey candidates and used as negative examples for the AI.",
+  "patches": ["32636_52_486", "32636_53_486", "32636_54_486", "32636_55_486", "32636_56_486", "32636_57_486",
+              "32636_52_487", "32636_53_487", "32636_54_487", "32636_55_487", "32636_56_487", "32636_57_487",
+              "32636_56_488", "32636_57_488"]
+}

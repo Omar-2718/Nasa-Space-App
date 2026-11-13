@@ -7,3 +7,6 @@ data/**/*.npy
 web_assets/
 node_modules/
 dist/
+
+# trained model weights (retrain with ml/train.py)
+ml/models/

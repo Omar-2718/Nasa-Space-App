@@ -1,0 +1,76 @@
+// Beneath the Sand data model. Spatial columns are PostGIS types; query them with $queryRaw (ST_AsGeoJSON, ST_Distance...).
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+enum TagLabel {
+  channel
+  site_feature
+  nothing
+  unsure
+}
+
+model Patch {
+  id           String  @id                                   // e.g. 32636_21_487 (UTM grid cell)
+  tile         String
+  geom         Unsupported("geometry(Polygon, 4326)")
+  center       Unsupported("geometry(Point, 4326)")
+  tracerLine   Float   @default(0) @map("tracer_line")        // share of pixels the rule-based tracer marked as channel
+  tracerValley Float   @default(0) @map("tracer_valley")
+  aiScore      Float?  @map("ai_score")                       // model probability of a channel (0..1)
+  goldLabel    TagLabel? @map("gold_label")                   // known answer for quality control
+  modern       Boolean @default(false)                          // farms/roads: never a survey candidate, AI negative example
+  tags         Tag[]
+
+  @@index([geom], type: Gist)
+  @@map("patches")
+}
+
+model Session {
+  id        String   @id                                      // random id kept in the browser
+  name      String?
+  trust     Float    @default(0.7)                            // 0..1, updated by ml/trust.py
+  flagged   Boolean  @default(false)                          // suspected troll / spam
+  createdAt DateTime @default(now()) @map("created_at")
+  tags      Tag[]
+
+  @@map("sessions")
+}
+
+model Tag {
+  id        BigInt   @id @default(autoincrement())
+  patch     Patch    @relation(fields: [patchId], references: [id])
+  patchId   String   @map("patch_id")
+  session   Session  @relation(fields: [sessionId], references: [id])
+  sessionId String   @map("session_id")
+  label     TagLabel
+  ms        Int?                                              // time spent before answering
+  isQuiz    Boolean  @default(false) @map("is_quiz")
+  pCorrect  Float?   @map("p_correct")                        // per-tag reliability, from ml/trust.py
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([patchId])
+  @@index([sessionId])
+  @@map("tags")
+}
+
+model Site {
+  id         Int    @id @default(autoincrement())
+  name       String
+  kind       String
+  ageText    String? @map("age_text")
+  note       String?
+  confidence String                                           // 'published' | 'approximate' (location not verified)
+  sourceUrl  String? @map("source_url")
+  geom       Unsupported("geometry(Point, 4326)")
+
+  @@index([geom], type: Gist)
+  @@map("sites")
+}

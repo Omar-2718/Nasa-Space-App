@@ -4,12 +4,21 @@ NASA Space Apps 2026, challenge "Dancing with the SARs". NISAR's L-band radar se
 
 Full plan: see `PLAN.md`.
 
+## Run it
+```
+./dev.sh          # PostGIS (docker, port 5433), API :3000, web :5173, trust model every 30 s
+```
+Open http://localhost:5173. Phones on the same Wi-Fi: http://<your-ip>:5173.
+Retrain the AI after people tag: `.venv/bin/python ml/train.py` (about 1.5 min on an RTX 3050).
+Team gold labels: open http://localhost:5173/?admin#tag (admin key: `ADMIN_KEY` env var, default `sand-admin`).
+
 ## Layout
 | Folder | What | Owner |
 |---|---|---|
 | `web/` | React + Vite + TypeScript + MapLibre | UI |
-| `api/` | NestJS + Postgres/PostGIS | Backend |
-| `ml/` | PyTorch model, trust model, FastAPI service | AI |
+| `api/` | Express + Prisma + PostGIS | Backend |
+| `ml/` | `train.py` (U-Net), `trust.py` (tagger reliability) | AI |
+| `notebooks/` | data pipeline explained (`01_data_pipeline.ipynb`) | everyone |
 | `pipeline/` | Python: download NISAR crops, trace channels, cut patches | anyone |
 | `app/` | first prototype (vanilla JS); reference only | |
 
