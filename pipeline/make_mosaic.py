@@ -67,6 +67,22 @@ def build():
         if polys:
             inside = rasterize(((g_, 1) for g_ in polys), out_shape=mos.shape, transform=dst_t, fill=0, dtype='uint8', all_touched=True).astype(bool)
             mos[~inside] = np.nan
+    # river layer = what the radar squares show: clip traced features to the patch squares,
+    # minus modern farms (pivot circles and canals look like channels to the tracer)
+    if os.path.exists(idx_path):
+        from shapely.geometry import Polygon, shape, mapping
+        from shapely.ops import unary_union
+        modern = set(json.load(open('pipeline/modern_zones.json'))['patches'])
+        idx = json.load(open(idx_path))
+        keep = unary_union([Polygon(p['corners']) for p in idx if p['id'] not in modern]).buffer(0)
+        clipped = []
+        for f in features:
+            g = shape(f['geometry']).intersection(keep)
+            if g.is_empty or g.geom_type not in ('LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'): continue
+            if f['properties']['kind'] == 'channel':
+                f['properties']['len_km'] = round(f['properties']['len_km'] * g.length / max(shape(f['geometry']).length, 1e-12), 2)
+            clipped.append({**f, 'geometry': mapping(g)})
+        features = clipped
     m = ~np.isnan(mos)
     g = (np.clip((10 * np.log10(np.clip(np.nan_to_num(mos), 1e-6, None)) - st['HL']) / (st['HH'] - st['HL']), 0, 1) * 255).astype(np.uint8)
     Image.fromarray(np.dstack([g, np.where(m, 255, 0).astype(np.uint8)]), 'LA').save(f'{OUT}/mosaic_hh.png', compress_level=3)   # grey + alpha: half the size of RGBA
@@ -75,9 +91,11 @@ def build():
     focus = [(W + E) / 2, (S + N) / 2]
     vals = [f for f in features if f['properties']['kind'] == 'valley']
     if vals:
-        ring = np.array(max(vals, key=lambda f: f['properties']['area_px'])['geometry']['coordinates'][0]); focus = ring.mean(0).tolist()
+        from shapely.geometry import shape
+        c = shape(max(vals, key=lambda f: f['properties']['area_px'])['geometry']).centroid; focus = [c.x, c.y]
     elif features:
-        pts = np.array([c for f in features for c in f['geometry']['coordinates']]); focus = np.median(pts, 0).tolist()
+        from shapely.geometry import shape
+        pts = np.array([(c.x, c.y) for c in (shape(f['geometry']).centroid for f in features)]); focus = np.median(pts, 0).tolist()
     km = sum(f['properties'].get('len_km', 0) for f in features)
     json.dump({'corners': [[W, N], [E, N], [E, S], [W, S]], 'bounds': [[W, S], [E, N]], 'focus': [round(focus[0], 4), round(focus[1], 4)],
                'tiles': len(tiles), 'size_px': [w, h], 'channels_km': round(km)}, open(f'{OUT}/mosaic.json', 'w'))

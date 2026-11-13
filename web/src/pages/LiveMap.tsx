@@ -1,12 +1,13 @@
-// Community map: every 5 km patch coloured by weighted crowd vote, AI score layer, known sites, live tag feed (SSE).
+// Live map: buried rivers traced from NISAR radar, highlighted on top of the radar and photo background, plus known sites
+// and on-demand radar downloads.
 import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import { api, SAT_STYLE, setBasemap, pct, type Stats, type AreaJob, type Basemap } from '../api';
 
-type FeedItem = { t: string; label: string; id: string };
+type RiverStats = { km: number; channels: number; valleys: number };
 const LAYERS = [
-  { id: 'crowd', text: 'Crowd votes', sw: 'linear-gradient(90deg,#3a6b8a,#2fd3ff)' },
-  { id: 'ai', text: 'AI / tracer score', sw: 'linear-gradient(90deg,#4a3420,#ffaa3c)' },
+  { id: 'rivers', text: 'Buried rivers (traced from radar)', sw: '#38d6ff' },
+  { id: 'ai', text: 'AI river likelihood per square', sw: 'linear-gradient(90deg,#4a3420,#ffaa3c)' },
   { id: 'radar', text: 'NISAR radar', sw: '#888' },
   { id: 'sites', text: 'Known archaeological sites', sw: '#ff5c8a' },
 ] as const;
@@ -16,6 +17,14 @@ const sitePopup = (m: maplibregl.Map, p: Record<string, unknown>, at: maplibregl
     `<b>${p.name}</b><br>${p.kind}<br>${p.age_text}<br><span style="opacity:.8">${p.note ?? ''}</span><br>` +
     `<i>${p.confidence === 'approximate' ? 'Approximate location' : 'Published location'}</i>` +
     (p.source_url ? ` · <a href="${p.source_url}" target="_blank" rel="noreferrer">source</a>` : '')).addTo(m);
+
+const LAYER_IDS: Record<string, string[]> = { rivers: ['valleys', 'valleys-line', 'rivers-glow', 'rivers'] };
+const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+const loadRivers = () => fetch(`/layers/channels.geojson?t=${Date.now()}`).then(r => (r.ok ? r.json() : EMPTY)).catch(() => EMPTY) as Promise<GeoJSON.FeatureCollection>;
+const riverStats = (fc: GeoJSON.FeatureCollection): RiverStats => ({
+  km: Math.round(fc.features.reduce((a, f) => a + Number(f.properties?.len_km ?? 0), 0)),
+  channels: fc.features.filter(f => f.properties?.kind === 'channel').length,
+  valleys: fc.features.filter(f => f.properties?.kind === 'valley').length });
 
 export default function LiveMap() {
   const map = useRef<maplibregl.Map | null>(null);
@@ -49,8 +58,8 @@ export default function LiveMap() {
     }
   };
   const [stats, setStats] = useState<Stats>();
-  const [feed, setFeed] = useState<FeedItem[]>([]);
-  const [on, setOn] = useState<Record<string, boolean>>({ crowd: true, ai: false, radar: true, sites: true });
+  const [rs, setRs] = useState<RiverStats>();
+  const [on, setOn] = useState<Record<string, boolean>>({ rivers: true, ai: false, radar: true, sites: true });
   const [sel, setSel] = useState<Record<string, unknown> | null>(null);
   const [base, setBase] = useState<Basemap>('s2');
   const [siteList, setSiteList] = useState<GeoJSON.Feature[]>([]);
@@ -104,6 +113,7 @@ export default function LiveMap() {
     const src = m.getSource('radar') as maplibregl.ImageSource | undefined;
     if (M && src) src.updateImage({ url: `/layers/mosaic_hh.png?t=${Date.now()}`, coordinates: M.corners });
     else if (M) { m.addSource('radar', { type: 'image', url: `/layers/mosaic_hh.png?t=${Date.now()}`, coordinates: M.corners }); m.addLayer({ id: 'radar', type: 'raster', source: 'radar' }, 'ai'); }
+    const riv = await loadRivers(); (m.getSource('rivers') as maplibregl.GeoJSONSource | undefined)?.setData(riv); setRs(riverStats(riv));
     api.stats().then(setStats);
   };
 
@@ -114,7 +124,8 @@ export default function LiveMap() {
     map.current = m;
     (window as unknown as { __livemap: maplibregl.Map }).__livemap = m;   // handy for debugging in the console
     m.on('load', async () => {
-      const [cons, sites, M] = await Promise.all([api.consensus(), api.sites(), fetch('/layers/mosaic.json').then(r => (r.ok ? r.json() : null)).catch(() => null)]);
+      const [cons, sites, M, riv] = await Promise.all([api.consensus(), api.sites(), fetch('/layers/mosaic.json').then(r => (r.ok ? r.json() : null)).catch(() => null), loadRivers()]);
+      setRs(riverStats(riv));
       if (M) {
         m.addSource('radar', { type: 'image', url: `/layers/mosaic_hh.png?t=${Date.now()}`, coordinates: M.corners });
         m.addLayer({ id: 'radar', type: 'raster', source: 'radar', paint: { 'raster-opacity': .9, 'raster-fade-duration': 0 } });
@@ -125,10 +136,16 @@ export default function LiveMap() {
       m.addLayer({ id: 'ai', type: 'fill', source: 'patches', layout: { visibility: 'none' }, paint: {
         'fill-color': ['interpolate', ['linear'], ['coalesce', ['get', 'ai'], ['get', 'tracer']], 0, '#4a3420', 1, '#ffaa3c'],
         'fill-opacity': ['interpolate', ['linear'], ['coalesce', ['get', 'ai'], ['get', 'tracer']], 0, 0, 0.3, 0.05, 1, 0.45] } });
-      m.addLayer({ id: 'crowd', type: 'fill', source: 'patches', filter: ['>', ['get', 'votes'], 0], paint: {
-        'fill-color': ['interpolate', ['linear'], ['coalesce', ['get', 'channelShare'], 0], 0, '#3a6b8a', 1, '#2fd3ff'],
-        'fill-opacity': ['interpolate', ['linear'], ['get', 'votes'], 1, 0.35, 5, 0.75] } });
-      m.addLayer({ id: 'outline', type: 'line', source: 'patches', paint: { 'line-color': ['case', ['get', 'modern'], '#e9786b', '#ffffff'], 'line-opacity': ['case', ['get', 'modern'], 0.8, 0.35], 'line-width': 0.8 } });
+      // buried rivers: valleys as soft blue areas, channels as glowing lines (longer = brighter)
+      m.addSource('rivers', { type: 'geojson', data: riv });
+      m.addLayer({ id: 'valleys', type: 'fill', source: 'rivers', filter: ['==', ['get', 'kind'], 'valley'], paint: { 'fill-color': '#2fa8ff', 'fill-opacity': 0.22 } });
+      m.addLayer({ id: 'valleys-line', type: 'line', source: 'rivers', filter: ['==', ['get', 'kind'], 'valley'], paint: { 'line-color': '#7fd8ff', 'line-width': 1.2, 'line-opacity': 0.8 } });
+      m.addLayer({ id: 'rivers-glow', type: 'line', source: 'rivers', filter: ['==', ['get', 'kind'], 'channel'], layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#38d6ff', 'line-blur': 4, 'line-opacity': 0.35, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4, 13, 12] } });
+      m.addLayer({ id: 'rivers', type: 'line', source: 'rivers', filter: ['==', ['get', 'kind'], 'channel'], layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#9beeff', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1, 13, 3],
+                 'line-opacity': ['interpolate', ['linear'], ['coalesce', ['get', 'len_km'], 1], 1, 0.55, 5, 1] } });
+      m.addLayer({ id: 'outline', type: 'line', source: 'patches', paint: { 'line-color': ['case', ['get', 'modern'], '#e9786b', '#ffffff'], 'line-opacity': ['case', ['get', 'modern'], 0.8, 0.2], 'line-width': 0.8 } });
       m.addSource('sites', { type: 'geojson', data: sites }); setSiteList(sites.features);
       m.addLayer({ id: 'sites', type: 'circle', source: 'sites', paint: { 'circle-radius': 7, 'circle-color': '#ff5c8a', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
       labels.current = sites.features.map(f => {
@@ -141,17 +158,8 @@ export default function LiveMap() {
       m.on('click', 'sites', e => { const p = e.features?.[0]?.properties; if (p) sitePopup(m, p, e.lngLat); });
     });
 
-    // live updates: refresh the patch layer (debounced) and show a pulse where someone just tagged
-    let timer: number | undefined;
+    // live updates: radar downloads finishing (on this or another computer)
     const es = new EventSource('/api/stream');
-    es.addEventListener('tag', ev => {
-      const d = JSON.parse((ev as MessageEvent).data);
-      setFeed(f => [{ t: new Date().toLocaleTimeString(), label: d.label, id: d.patchId }, ...f].slice(0, 30));
-      const el = document.createElement('div'); el.className = 'ping';
-      const mk = new maplibregl.Marker({ element: el }).setLngLat(d.center).addTo(m); setTimeout(() => mk.remove(), 2500);
-      clearTimeout(timer);
-      timer = window.setTimeout(async () => { (m.getSource('patches') as maplibregl.GeoJSONSource | undefined)?.setData(await api.consensus()); api.stats().then(setStats); }, 600);
-    });
     es.addEventListener('area', ev => {
       const j = JSON.parse((ev as MessageEvent).data) as AreaJob; setJob(j);
       if (j.state === 'done') { setPreview(null); if (j.added) refresh(); }
@@ -162,7 +170,7 @@ export default function LiveMap() {
 
   useEffect(() => {
     const m = map.current; if (!m?.isStyleLoaded()) return;
-    for (const [id, v] of Object.entries(on)) if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', v ? 'visible' : 'none');
+    for (const [k, v] of Object.entries(on)) for (const id of LAYER_IDS[k] ?? [k]) if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', v ? 'visible' : 'none');
     radarOn.current = on.radar; updateHiRes();
     labels.current.forEach(mk => { mk.getElement().style.display = on.sites ? '' : 'none'; });
   }, [on]);
@@ -171,12 +179,13 @@ export default function LiveMap() {
     <div className="split">
       <aside className="panel">
         <p className="eyebrow">Live map</p>
-        <h1>What everyone has found</h1>
+        <h1>Where the buried rivers are</h1>
+        <p className="muted small">Blue lines are old river channels traced from NISAR L-band radar, which sees through dry sand. Blue areas are wide buried valleys. These are candidates for experts to check, not confirmed finds.</p>
         <div className="stats">
-          <div className="stat"><b>{stats?.tags ?? '–'}</b><span>tags</span></div>
-          <div className="stat"><b>{stats?.people ?? '–'}</b><span>people</span></div>
-          <div className="stat"><b>{stats ? `${stats.tagged}/${stats.patches}` : '–'}</b><span>patches tagged</span></div>
-          <div className="stat"><b>{stats?.flagged ?? '–'}</b><span>low-trust taggers filtered</span></div>
+          <div className="stat"><b>{rs ? rs.km.toLocaleString() : '–'}</b><span>km of buried channels</span></div>
+          <div className="stat"><b>{rs?.valleys ?? '–'}</b><span>buried valleys</span></div>
+          <div className="stat"><b>{stats?.patches ?? '–'}</b><span>5 km squares with radar</span></div>
+          <div className="stat"><b>{siteList.length || '–'}</b><span>known sites</span></div>
         </div>
         <div className="legend">
           {LAYERS.map(l => (
@@ -197,7 +206,7 @@ export default function LiveMap() {
               {siteList.map((f, i) => <option key={i} value={i}>{String(f.properties?.name)}</option>)}
             </select>
           </label>
-          <span className="muted small">Red outlines: modern farms, excluded from field plans.</span>
+          <span className="muted small">Red outlines: modern farms (their lines are hidden, they're irrigation, not rivers).</span>
         </div>
         <div className="card addcard">
           <h2>Add radar for an area</h2>
@@ -239,13 +248,9 @@ export default function LiveMap() {
           <div className="card">
             <h2>Patch {String(sel.id)}</h2>
             <img src={`/patches/${sel.id}_radar.png`} alt="" style={{ width: '100%', borderRadius: 6 }} />
-            <p className="small">Crowd: {sel.channelShare === 'null' || sel.channelShare == null ? 'no votes yet' : `${pct(Number(sel.channelShare))} river (${sel.votes} votes)`} · {sel.ai !== null && sel.ai !== 'null' ? `AI ${pct(Number(sel.ai))}` : `Tracer ${pct(Number(sel.tracer))}`}</p>
+            <p className="small">River likelihood: {sel.ai !== null && sel.ai !== 'null' ? `AI ${pct(Number(sel.ai))}` : `Tracer ${pct(Number(sel.tracer))}`}{String(sel.modern) === 'true' ? ' · modern farm' : ''}</p>
           </div>
         )}
-        <div>
-          <h2>Live feed</h2>
-          <div className="feed">{feed.length ? feed.map((f, i) => <span key={i}>{f.t} · someone tagged {f.id.split('_').slice(1).join('_')} as <b>{f.label.replace('_', ' ')}</b></span>) : <span>Waiting for tags… open “Tag the desert” on a phone.</span>}</div>
-        </div>
       </aside>
       <div className={'mapwrap' + (picking ? ' picking' : '')}><div id="livemap" className="map" /></div>
     </div>

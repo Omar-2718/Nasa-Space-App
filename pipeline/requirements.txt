@@ -9,3 +9,4 @@ rasterio
 pillow
 matplotlib
 psycopg[binary]
+shapely

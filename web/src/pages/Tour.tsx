@@ -106,7 +106,7 @@ export default function Tour() {
           <button onClick={() => setStep(step - 1)} disabled={step === 0}>Back</button>
           {step < STEPS.length - 1
             ? <button className="primary" onClick={() => setStep(step + 1)} disabled={!ready}>Next</button>
-            : <a href="#tag"><button className="primary">Start tagging</button></a>}
+            : <a href="#map"><button className="primary">See the buried rivers</button></a>}
         </div>
         <div className="dots">{STEPS.map((_, k) => <i key={k} className={k === step ? 'on' : ''} />)}</div>
         {missing && <p className="no small">No radar on this computer yet. Add an area on the <a href="#map">Live map</a>, or unzip the team data pack.</p>}

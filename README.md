@@ -1,6 +1,6 @@
 # Beneath the Sand
 
-NASA Space Apps 2026, challenge "Dancing with the SARs". NISAR's L-band radar sees through dry desert sand and shows river channels buried for thousands of years. People and an AI tag them together, and the output is an open map plus field survey plans for archaeologists.
+NASA Space Apps 2026, challenge "Dancing with the SARs". NISAR's L-band radar sees through dry desert sand and shows river channels buried for thousands of years. The app traces them from the radar, highlights them on a live map next to known archaeological sites, and turns them into field survey plans for archaeologists.
 
 Full plan: see `PLAN.md`.
 
@@ -39,7 +39,7 @@ Datasets are not in git. Without data the app still runs and shows "add radar" s
 ### 4. Check it works
 - **Tour:** the radar reveal plays.
 - **Live map:** use **Go to site** to jump to known places (Nabta Playa, Gebel Ramlah, Bir Kiseiba, Wadi Howar…) and compare the radar with the photo background. Squares without radar can be added with **Add radar for an area**.
-- **Tag the desert:** tag a few patches; they show up on the Live map within seconds.
+- **Live map:** blue lines are traced buried channels and blue areas are buried valleys (lines on modern farms are hidden).
 
 ### Troubleshooting
 | Problem | Fix |

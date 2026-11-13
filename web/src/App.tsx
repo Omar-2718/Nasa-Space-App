@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react';
 import { api, type Setup } from './api';
 import Tour from './pages/Tour';
-import Tag from './pages/Tag';
 import LiveMap from './pages/LiveMap';
 import Planner from './pages/Planner';
 import OpenData from './pages/OpenData';
 
 const PAGES = [
   { id: 'tour', label: 'Tour', el: <Tour /> },
-  { id: 'tag', label: 'Tag the desert', el: <Tag /> },
   { id: 'map', label: 'Live map', el: <LiveMap /> },
   { id: 'plan', label: 'Field plan', el: <Planner /> },
   { id: 'data', label: 'Open data', el: <OpenData /> },
