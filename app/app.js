@@ -45,19 +45,17 @@ function addRivers(map) {
     paint: { 'line-color': '#bff3ff', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.2, 13, 3.5] } });
 }
 function showRivers(on) {
-  for (const m of [mapA, mapB]) for (const id of ['valleys', 'rivers-glow', 'rivers']) m.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+  for (const id of ['valleys', 'rivers-glow', 'rivers']) mapB.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
   $('#showRivers').checked = on;
 }
 function setRadar(pol, opacity) {
-  for (const t of M.tiles) {
-    const id = 'r_' + t.id, url = `data/${t.id}_${pol}.png`;
-    if (mapB.getSource(id)) mapB.getSource(id).updateImage({ url, coordinates: t.corners });
-    else {
-      mapB.addSource(id, { type: 'image', url, coordinates: t.corners });
-      mapB.addLayer({ id, type: 'raster', source: id, paint: { 'raster-fade-duration': 0 } }, 'valleys');
-    }
-    mapB.setPaintProperty(id, 'raster-opacity', opacity);
+  const url = `data/radar_${pol}.png`, c = M.radar.corners;
+  if (mapB.getSource('radar')) mapB.getSource('radar').updateImage({ url, coordinates: c });
+  else {
+    mapB.addSource('radar', { type: 'image', url, coordinates: c });
+    mapB.addLayer({ id: 'radar', type: 'raster', source: 'radar', paint: { 'raster-fade-duration': 0 } }, 'valleys');
   }
+  mapB.setPaintProperty('radar', 'raster-opacity', opacity);
 }
 
 // ---------- guided tour ----------
@@ -69,7 +67,7 @@ const TOUR = [
   { title: 'Rivers under the sand', pos: 0, rivers: true, cam: { center: [29.3, 22.66], zoom: 10.2 },
     text: 'The shaded band is a buried river valley, kilometres wide. The blue lines are smaller channels feeding it. Fine sediment in the old riverbeds looks dark to the radar. We traced them automatically. They flowed when the Sahara was green, thousands of years ago.' },
   { title: 'Invisible to the eye', pos: 50, rivers: true, cam: { center: [29.12, 22.6], zoom: 11.2 },
-    text: 'Drag the white line. On the photo side the blue lines cross featureless sand. Without radar, nobody would know these rivers are there.' },
+    text: 'Drag the white line back and forth. Where the radar shows rivers, the photo shows only featureless sand. Without radar, nobody would know they are there.' },
   { title: '1981 → 2026', pos: 50, rivers: true, cam: 'all',
     text: 'The Space Shuttle first glimpsed these rivers in 1981, on a single flight. NISAR now sees them every 12 days, free for anyone. Next: scan the whole Western Desert for channels nobody has mapped, and point water and archaeology teams to them.' },
 ];
@@ -98,10 +96,9 @@ function setView(v) {
 
 async function init() {
   M = await (await fetch('data/manifest.json')).json();
-  const xs = M.tiles.flatMap(t => t.corners.map(c => c[0])), ys = M.tiles.flatMap(t => t.corners.map(c => c[1]));
-  bounds = [[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]];
+  const c = M.radar.corners; bounds = [c[3], c[1]];   // [SW, NE]
   await Promise.all([ready(mapA), ready(mapB)]);
-  addRivers(mapA); addRivers(mapB);
+  addRivers(mapB);
   setRadar('hh', 1);
   $('#km').textContent = M.channels_km;
   $('#dots').innerHTML = TOUR.map(() => '<i></i>').join('');

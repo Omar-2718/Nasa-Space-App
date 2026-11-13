@@ -21,20 +21,33 @@ V_all = np.concatenate([db(np.load(t)['HV'][::4, ::4]).ravel() for t in tiles]);
 hl, hh_ = np.percentile(H_all, [2, 98]); vl, vh = np.percentile(V_all, [2, 98])
 st = lambda a, lo, hi: (np.clip((a-lo)/(hi-lo), 0, 1)*255).astype(np.uint8)
 
-manifest = {'tiles': []}
+# Mosaic all tiles onto one north-up lon/lat grid (no rotation, no seams)
+import rasterio
+from rasterio.warp import reproject, Resampling, transform_bounds
+from rasterio.transform import from_origin
+RES = 0.0004                                   # degrees, ~40 m
+bb = [transform_bounds(int(np.load(t)['epsg']), 4326, np.load(t)['x'][0], np.load(t)['y'][-1], np.load(t)['x'][-1], np.load(t)['y'][0]) for t in tiles]
+W_, S_, E_, N_ = min(b[0] for b in bb), min(b[1] for b in bb), max(b[2] for b in bb), max(b[3] for b in bb)
+w, h = int((E_ - W_) / RES), int((N_ - S_) / RES); dst_t = from_origin(W_, N_, RES, RES)
+mos = {k: np.full((h, w), np.nan, np.float32) for k in ('HH', 'HV')}
 for t in tiles:
-    name = os.path.basename(os.path.dirname(t))
-    C = np.load(t); H, V = db(C['HH'][::2, ::2]), db(C['HV'][::2, ::2]); m = C['HH'][::2, ::2] > 0
-    a = np.where(m, 255, 0).astype(np.uint8)
-    hh = st(H, hl, hh_); hv = st(V, vl, vh); ratio = st(H - V, np.percentile(H - V, 2), np.percentile(H - V, 98))
-    Image.fromarray(np.dstack([hh, hh, hh, a])).save(f'{OUT}/{name}_hh.png', optimize=True)
-    Image.fromarray(np.dstack([hh, hv, ratio, a])).save(f'{OUT}/{name}_rgb.png', optimize=True)
-    manifest['tiles'].append({'id': name, 'corners': corners(C['x'], C['y'], int(C['epsg']))})
-
+    C = np.load(t); src_t = from_origin(C['x'][0] - 10, C['y'][0] + 10, 20, 20)
+    for k in mos:
+        a = C[k].astype(np.float32); a[a <= 0] = np.nan
+        tmp = np.full((h, w), np.nan, np.float32)
+        reproject(a, tmp, src_transform=src_t, src_crs=f"EPSG:{int(C['epsg'])}", dst_transform=dst_t, dst_crs='EPSG:4326',
+                  resampling=Resampling.average, src_nodata=np.nan, dst_nodata=np.nan)
+        mos[k] = np.where(np.isnan(mos[k]), tmp, mos[k])
+m = ~np.isnan(mos['HH']); H, V = db(mos['HH']), db(mos['HV'])
+a = np.where(m, 255, 0).astype(np.uint8)
+hh = st(H, hl, hh_); hv = st(V, vl, vh); r = H - V; ratio = st(r, np.nanpercentile(r[m], 2), np.nanpercentile(r[m], 98))
+Image.fromarray(np.dstack([hh, hh, hh, a])).save(f'{OUT}/radar_hh.png', optimize=True)
+Image.fromarray(np.dstack([hh, hv, ratio, a])).save(f'{OUT}/radar_rgb.png', optimize=True)
+manifest = {'radar': {'corners': [[W_, N_], [E_, N_], [E_, S_], [W_, S_]], 'size_px': [w, h]}}
 subprocess.run([sys.executable, '-W', 'ignore', 'scripts/trace_channels.py', f'{OUT}/channels.geojson', 'data/trace_all.png', *tiles], check=True)
 g = json.load(open(f'{OUT}/channels.geojson'))
 manifest['channels_km'] = round(sum(f['properties'].get('len_km', 0) for f in g['features']))
 manifest['date'] = '2026-10-17'
 json.dump(manifest, open(f'{OUT}/manifest.json', 'w'), indent=1)
-print('tiles', [t['id'] for t in manifest['tiles']], 'channels_km', manifest['channels_km'])
+print('mosaic', manifest['radar']['size_px'], 'channels_km', manifest['channels_km'])
 print(sum(os.path.getsize(f'{OUT}/{f}') for f in os.listdir(OUT)) // 1024, 'KB total')
