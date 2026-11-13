@@ -13,6 +13,16 @@ type IndexRec = { id: string; tile: string; corners: number[][]; center: number[
 // Bir Safsaf and Wadi Arid are left out until their coordinates are verified from the 1980s field papers.
 // Coordinates: Wikipedia geodata (checked 2026-11-13) unless noted. Oasis/mountain points are centres, not exact sites.
 const SITES = [
+  // Known buried rivers (shown in gold): published radar or field discoveries, for comparing with what we trace.
+  { name: 'Wadi Howar', kind: "Buried river: the 'Yellow Nile'", age: 'Flowed until c. 2,000 BCE',
+    note: 'Sudan. Dried Nile tributary, about 1,100 km long, now partly under sand.', confidence: 'published',
+    url: 'https://en.wikipedia.org/wiki/Wadi_Howar', lon: 30.7406, lat: 18.1989 },
+  { name: 'Kufrah radar river', kind: 'Buried river seen by Space Shuttle radar (SIR-C, 1994)', age: 'Pre-Holocene',
+    note: 'Libya. Point is the centre of NASA image PIA01310; part of a ~900 km buried river system mapped with L-band radar.', confidence: 'published',
+    url: 'https://www.jpl.nasa.gov/images/pia01310-space-radar-image-of-wadi-kufra-libya/', lon: 22.9, lat: 23.3 },
+  { name: 'Ahramat Nile Branch', kind: 'Buried river: lost branch of the Nile beside the pyramids', age: 'Active c. 2,700–1,500 BCE',
+    note: 'Runs ~64 km from Lisht to Giza, 2.5–10 km west of today\'s Nile (Ghoneim et al. 2024). Point is mid-way, at Saqqara.', confidence: 'approximate',
+    url: 'https://www.smithsonianmag.com/smart-news/ancient-egyptian-pyramids-were-actually-built-on-the-banks-of-this-dried-up-branch-of-the-nile-180984389/', lon: 31.2164, lat: 29.8711 },
   { name: 'Nabta Playa', kind: 'Neolithic ceremonial site', age: 'c. 7,000–4,500 BCE',
     note: 'Seasonal lake basin with one of the oldest known stone circles.', confidence: 'published',
     url: 'https://en.wikipedia.org/wiki/Nabta_Playa', lon: 30.7256, lat: 22.508 },
@@ -28,9 +38,6 @@ const SITES = [
   { name: 'Selima Oasis', kind: 'Oasis with prehistoric lake deposits', age: 'Pleistocene to Holocene',
     note: 'Sudan. Ancient lake sediments and stone-tool sites.', confidence: 'published',
     url: 'https://en.wikipedia.org/wiki/Selima_Oasis', lon: 29.3167, lat: 21.3667 },
-  { name: 'Wadi Howar', kind: "Dried river (the 'Yellow Nile')", age: 'Active until c. 2,000 BCE',
-    note: 'Sudan. Once a Nile tributary; a known buried-river check for the radar.', confidence: 'published',
-    url: 'https://en.wikipedia.org/wiki/Wadi_Howar', lon: 30.7406, lat: 18.1989 },
   { name: 'Gebel Uweinat', kind: 'Mountain with prehistoric rock art', age: 'Holocene',
     note: 'Egypt–Libya–Sudan corner.', confidence: 'published',
     url: 'https://en.wikipedia.org/wiki/Jebel_Uweinat', lon: 25.0167, lat: 21.9167 },

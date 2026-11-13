@@ -67,7 +67,7 @@ Datasets are not in git. Without data the app still runs and shows "add radar" s
 | `app/` | first prototype (vanilla JS); reference only | |
 
 ## Known sites
-14 places on the map (`api/prisma/seed.ts`), coordinates from Wikipedia's geodata unless marked approximate. Toshka Lakes and Abu Simbel are reference points for checking the radar, not buried-river sites. Oasis and mountain points are centres, not exact dig sites.
+16 places on the map: 3 published buried rivers in gold (Wadi Howar, Kufrah radar river, Ahramat Nile Branch) and 13 sites (`api/prisma/seed.ts`), coordinates from Wikipedia's geodata unless marked approximate. Toshka Lakes and Abu Simbel are reference points for checking the radar, not buried-river sites. Oasis and mountain points are centres, not exact dig sites.
 
 ## Data (not in git)
 - `data/` holds raw NISAR crops (`.npz`), re-downloadable with `pipeline/crop_gcov.py` (needs a NASA Earthdata login in `~/.netrc`).

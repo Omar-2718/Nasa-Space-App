@@ -119,3 +119,4 @@ th { color: var(--muted); font-weight: 600; }
 .maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: #1d1813; }
 .maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: #1d1813; }
 .maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: #1d1813; }
+.sitelabel.river { color: #ffd23f; font-weight: 700; }

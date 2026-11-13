@@ -13,7 +13,7 @@ const LAYERS = [
   { id: 'crowd', text: 'Squares people checked (brighter = more said river)', sw: 'linear-gradient(90deg,#5a4a7a,#c48bff)' },
   { id: 'ai', text: 'AI river likelihood per square', sw: 'linear-gradient(90deg,#4a3420,#ffaa3c)' },
   { id: 'radar', text: 'NISAR radar', sw: '#888' },
-  { id: 'sites', text: 'Known sites (places people lived, not rivers)', sw: '#ff5c8a' },
+  { id: 'sites', text: 'Known buried rivers (gold) and sites where people lived (pink)', sw: 'linear-gradient(90deg,#ffd23f 50%,#ff5c8a 50%)' },
 ] as const;
 
 const sitePopup = (m: maplibregl.Map, p: Record<string, unknown>, at: maplibregl.LngLatLike) =>
@@ -169,9 +169,9 @@ export default function LiveMap() {
       m.addLayer({ id: 'hit', type: 'fill', source: 'patches', paint: { 'fill-color': '#000', 'fill-opacity': 0 } });   // whole square clickable
       m.addLayer({ id: 'outline', type: 'line', source: 'patches', paint: { 'line-color': ['case', ['get', 'modern'], '#e9786b', '#ffffff'], 'line-opacity': ['case', ['get', 'modern'], 0.8, 0.2], 'line-width': 0.8 } });
       m.addSource('sites', { type: 'geojson', data: sites }); setSiteList(sites.features);
-      m.addLayer({ id: 'sites', type: 'circle', source: 'sites', paint: { 'circle-radius': 7, 'circle-color': '#ff5c8a', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+      m.addLayer({ id: 'sites', type: 'circle', source: 'sites', paint: { 'circle-radius': ['case', ['in', 'Buried river', ['get', 'kind']], 9, 7], 'circle-color': ['case', ['in', 'Buried river', ['get', 'kind']], '#ffd23f', '#ff5c8a'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
       labels.current = sites.features.map(f => {
-        const el = document.createElement('div'); el.className = 'sitelabel'; el.textContent = String(f.properties?.name);
+        const el = document.createElement('div'); el.className = 'sitelabel' + (String(f.properties?.kind).includes('Buried river') ? ' river' : ''); el.textContent = String(f.properties?.name);
         return new maplibregl.Marker({ element: el, anchor: 'top', offset: [0, 10] }).setLngLat((f.geometry as GeoJSON.Point).coordinates as [number, number]).addTo(m);
       });
       m.on('moveend', updateHiRes); updateHiRes();
@@ -202,7 +202,7 @@ export default function LiveMap() {
       <aside className="panel">
         <p className="eyebrow">Live map</p>
         <h1>Where the buried rivers are</h1>
-        <p className="muted small">Everything blue is one thing: buried rivers, traced from NISAR L-band radar, which sees through dry sand. Thin lines are narrow channels; filled areas are wide old riverbeds (valleys) the rivers cut. These are candidates for experts to check, not confirmed finds.</p>
+        <p className="muted small">Everything blue is one thing: buried rivers, traced from NISAR L-band radar, which sees through dry sand. Thin lines are narrow channels; filled areas are wide old riverbeds (valleys) the rivers cut. Space Shuttle radar first discovered buried rivers in this part of the Sahara in 1981 (McCauley et al. 1982). These are candidates for experts to check, not confirmed finds.</p>
         <div className="stats">
           <div className="stat"><b>{rs ? rs.km.toLocaleString() : '–'}</b><span>km of buried channels</span></div>
           <div className="stat"><b>{rs?.valleys ?? '–'}</b><span>wide old riverbeds</span></div>
@@ -225,7 +225,7 @@ export default function LiveMap() {
                 m.flyTo({ center: c, zoom: 11 }); m.once('moveend', () => sitePopup(m, f.properties ?? {}, c)); }}
               style={{ marginLeft: 8, background: 'var(--bg)', color: 'var(--fg)', border: '1px solid var(--line)', borderRadius: 4, padding: '2px 4px' }}>
               <option value="">Choose… ({siteList.length})</option>
-              {siteList.map((f, i) => <option key={i} value={i}>{String(f.properties?.name)}</option>)}
+              {siteList.map((f, i) => <option key={i} value={i}>{String(f.properties?.kind).includes('Buried river') ? '★ ' : ''}{String(f.properties?.name)}</option>)}
             </select>
           </label>
           <span className="muted small">Click any square to tag it. Red outlines: modern farms (their lines are hidden, they're irrigation, not rivers).</span>
