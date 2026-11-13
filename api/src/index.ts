@@ -5,6 +5,7 @@ import { prisma } from './db.js';
 import { stream } from './live.js';
 import { tagging } from './routes/tagging.js';
 import { maps } from './routes/maps.js';
+import { areas } from './routes/areas.js';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const app = express();
@@ -13,6 +14,7 @@ app.use(express.json({ limit: '100kb' }));
 
 // patch images and other generated assets
 app.use('/patches', express.static(ROOT + 'web_assets/patches', { maxAge: '1h' }));
+app.use('/assets', express.static(ROOT + 'web_assets', { maxAge: 0 }));
 
 app.get('/api/health', async (_req, res) => {
   try { await prisma.$queryRaw`SELECT 1`; res.json({ ok: true, db: true }); }
@@ -21,6 +23,7 @@ app.get('/api/health', async (_req, res) => {
 app.get('/api/stream', stream);
 app.use('/api', tagging);
 app.use('/api', maps);
+app.use('/api', areas);
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

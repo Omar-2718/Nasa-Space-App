@@ -10,3 +10,14 @@ dist/
 
 # trained model weights (retrain with ml/train.py)
 ml/models/
+
+# all datasets and generated images stay out of git (share the data pack instead)
+data/
+notebooks/sample_data/
+web/public/tour/
+app/data/
+prototype/
+beneath-data.zip
+notebooks/sample_small/
+notebooks/*_small_sample.ipynb
+ml/metrics.json

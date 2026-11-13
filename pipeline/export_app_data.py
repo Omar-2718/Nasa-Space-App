@@ -5,8 +5,9 @@ Tiles: every data/safsaf*/20261017.npz. Channels: traced across all tiles by tra
 import numpy as np, json, glob, os, subprocess, sys
 from PIL import Image
 from pyproj import Transformer
-OUT = 'app/data'; os.makedirs(OUT, exist_ok=True)
+OUT = 'web/public/tour'; os.makedirs(OUT, exist_ok=True)   # tour layers for the React app (gitignored)
 for f in glob.glob(f'{OUT}/*'): os.remove(f)
+# note: trace output goes to data/trace_all.png
 db = lambda a: 10*np.log10(np.clip(np.nan_to_num(a), 1e-6, None))
 
 def corners(x, y, epsg, px=20):

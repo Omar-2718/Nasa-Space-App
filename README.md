@@ -26,7 +26,8 @@ Team gold labels: open http://localhost:5173/?admin#tag (admin key: `ADMIN_KEY` 
 - `data/` holds raw NISAR crops (`.npz`), re-downloadable with `pipeline/crop_gcov.py` (needs a NASA Earthdata login in `~/.netrc`).
 - `data/patches/*.npz`: 461 patches for ML (HH/HV in dB + tracer masks).
 - `web_assets/patches/`: patch PNGs + `index.json` served to the web app.
-- **Share `data/patches` and `web_assets/` as a zip or on a USB drive.** Don't push them to git.
+- **Datasets never go in git.** Make a data pack with `pipeline/pack_data.sh` (creates `beneath-data.zip`) and share it by USB or Drive; teammates unzip it in the project root.
+- No data pack? Start the app and use **Live map → Add radar for an area**: it downloads a 40 km area (about 25 MB) from NASA and builds the patches on that computer. Needs a NASA Earthdata login in `~/.netrc`.
 
 Coverage: about 12,000 km² near the Egypt–Sudan border (around 22.5–23.1°N, 29.2–31.1°E), NISAR GCOV track 079 descending, 17 Oct 2026.
 

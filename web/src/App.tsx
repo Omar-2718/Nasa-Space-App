@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { api, type Setup } from './api';
 import Tour from './pages/Tour';
 import Tag from './pages/Tag';
 import LiveMap from './pages/LiveMap';
@@ -17,6 +18,8 @@ const fromHash = () => PAGES.find(p => '#' + p.id === location.hash)?.id ?? 'tou
 
 export default function App() {
   const [page, setPage] = useState<string>(fromHash());
+  const [setup, setSetup] = useState<Setup>();
+  useEffect(() => { api.setup().then(setSetup).catch(() => {}); }, [page]);
   useEffect(() => {
     const on = () => setPage(fromHash());
     addEventListener('hashchange', on);
@@ -32,6 +35,13 @@ export default function App() {
           ))}
         </nav>
       </header>
+      {setup && setup.patchesInDb === 0 && page !== 'map' && (
+        <div className="banner">
+          <b>No radar patches on this computer yet.</b>
+          <span>Open the <a href="#map">Live map</a> and use “Add radar for an area” (downloads about 25 MB per area), or unzip the team data pack into the project folder and run <code>./dev.sh</code> again.</span>
+          {!setup.earthdataLogin && <span className="no">Downloading needs a NASA Earthdata login in ~/.netrc (see README).</span>}
+        </div>
+      )}
       <main>{PAGES.find(p => p.id === page)!.el}</main>
     </div>
   );

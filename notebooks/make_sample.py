@@ -1,6 +1,7 @@
 """Build notebooks/sample_data/: a small, shareable subset of the project data for 01_data_pipeline.ipynb.
 
-usage (from repo root): .venv/bin/python notebooks/make_sample.py
+usage (from repo root): .venv/bin/python notebooks/make_sample.py [--size-km 20] [--out notebooks/sample_data] [--auto]
+  --auto picks the window with the most traced channels (otherwise the fixed window below)
 Contents
   safsaf_crop.npz   20 x 20 km crop (1000 x 1000 px at 20 m) of data/safsaf/20261017.npz, same keys (HH, HV, x, y, epsg)
   optical_crop.npy  matching crop of data/safsaf/optical.npy (Sentinel-2 R,G,B on the 40 m radar grid)
@@ -15,8 +16,20 @@ import json, os, shutil, sys, warnings, numpy as np
 warnings.filterwarnings('ignore')
 sys.path.insert(0, 'pipeline')
 from trace_channels import trace_tile
-R0, C0, N = 800, 200, 1000                        # crop window in the 2000 x 2000 safsaf tile (even offsets)
-OUT = 'notebooks/sample_data'
+import argparse
+ap = argparse.ArgumentParser(); ap.add_argument('--size-km', type=float, default=20); ap.add_argument('--out', default='notebooks/sample_data')
+ap.add_argument('--auto', action='store_true'); args = ap.parse_args()
+N = int(args.size_km * 50) // 2 * 2                    # pixels at 20 m (even, so the 40 m grid lines up)
+R0, C0 = 800, 200                                      # default window in the 2000 x 2000 safsaf tile (even offsets)
+OUT = args.out
+if args.auto:                                           # window (on the 5.12 km patch grid) with the most traced channel pixels
+    T = trace_tile('data/safsaf/20261017.npz'); m = (T['line_mask'] | T['valley_mask']).astype(float)
+    best = None
+    for r in range(0, 2000 - N, 64):
+        for c in range(0, 2000 - N, 64):
+            v = m[r // 2:(r + N) // 2, c // 2:(c + N) // 2].mean()
+            if best is None or v > best[0]: best = (v, r, c)
+    R0, C0 = best[1], best[2]; print(f'auto window R0={R0} C0={C0} channel cover {best[0]:.2%}')
 os.makedirs(f'{OUT}/patches', exist_ok=True)
 C = np.load('data/safsaf/20261017.npz')
 x, y = C['x'][C0:C0 + N], C['y'][R0:R0 + N]

@@ -27,6 +27,7 @@ export default function Tour() {
   const run = useRef(0);
   const [step, setStep] = useState(0);
   const [ready, setReady] = useState(false);
+  const [missing, setMissing] = useState(false);
 
   const setPos = (p: number, animate = true) => {
     const w = wrap.current; if (!w) return;
@@ -54,7 +55,9 @@ export default function Tour() {
     let n = 0;
     const onLoad = async () => {
       if (++n < 2) return;
-      const M = await (await fetch('/tour/manifest.json')).json();
+      const r = await fetch('/tour/manifest.json');
+      if (!r.ok || !(r.headers.get('content-type') ?? '').includes('json')) { setMissing(true); return; }
+      const M = await r.json();
       const c = M.radar.corners; maps.current.bounds = [c[3], c[1]];
       b.addSource('radar', { type: 'image', url: '/tour/radar_hh.png', coordinates: c });
       b.addLayer({ id: 'radar', type: 'raster', source: 'radar', paint: { 'raster-fade-duration': 0 } });
@@ -106,6 +109,7 @@ export default function Tour() {
             : <a href="#tag"><button className="primary">Start tagging</button></a>}
         </div>
         <div className="dots">{STEPS.map((_, k) => <i key={k} className={k === step ? 'on' : ''} />)}</div>
+        {missing && <p className="no small">Tour images are missing on this computer. Unzip the team data pack, or run <code>pipeline/export_app_data.py</code>.</p>}
         <p className="muted small">NISAR L2 GCOV, 17 Oct 2026, NASA/ISRO via ASF DAAC. Lines are traced automatically and are candidates, not confirmed rivers.</p>
       </aside>
       <div className="mapwrap" ref={wrap}>

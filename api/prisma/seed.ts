@@ -23,7 +23,10 @@ const SITES = [
 ];
 
 async function main() {
-  const idx: IndexRec[] = JSON.parse(readFileSync(ROOT + 'web_assets/patches/index.json', 'utf8'));
+  const idxPath = ROOT + 'web_assets/patches/index.json';
+  // A fresh computer has no patch files yet: seed the sites, then add coverage from the app ("Add radar for an area").
+  const idx: IndexRec[] = existsSync(idxPath) ? JSON.parse(readFileSync(idxPath, 'utf8')) : [];
+  if (!idx.length) console.log('no patch files on this computer yet: use "Add radar for an area" in the app, or unzip the team data pack');
   const aiPath = ROOT + 'web_assets/ai_scores.json';
   const ai: Record<string, number> = existsSync(aiPath) ? JSON.parse(readFileSync(aiPath, 'utf8')) : {};
   for (const p of idx) {

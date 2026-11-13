@@ -1,13 +1,13 @@
 // Community map: every 5 km patch coloured by weighted crowd vote, AI score layer, known sites, live tag feed (SSE).
 import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
-import { api, SAT_STYLE, pct, type Stats } from '../api';
+import { api, SAT_STYLE, pct, type Stats, type AreaJob } from '../api';
 
 type FeedItem = { t: string; label: string; id: string };
 const LAYERS = [
   { id: 'crowd', text: 'Crowd votes', sw: 'linear-gradient(90deg,#3a6b8a,#2fd3ff)' },
   { id: 'ai', text: 'AI / tracer score', sw: 'linear-gradient(90deg,#4a3420,#ffaa3c)' },
-  { id: 'radar', text: 'Radar (tour area)', sw: '#888' },
+  { id: 'radar', text: 'NISAR radar', sw: '#888' },
   { id: 'sites', text: 'Known archaeological sites', sw: '#ff5c8a' },
 ] as const;
 
@@ -16,23 +16,50 @@ export default function LiveMap() {
   const labels = useRef<maplibregl.Marker[]>([]);
   const [stats, setStats] = useState<Stats>();
   const [feed, setFeed] = useState<FeedItem[]>([]);
-  const [on, setOn] = useState<Record<string, boolean>>({ crowd: true, ai: false, radar: false, sites: true });
+  const [on, setOn] = useState<Record<string, boolean>>({ crowd: true, ai: false, radar: true, sites: true });
   const [sel, setSel] = useState<Record<string, unknown> | null>(null);
+  // on-demand coverage: pick a spot -> confirm -> download progress
+  const [picking, setPicking] = useState(false);
+  const pickingRef = useRef(false);
+  const [pick, setPick] = useState<{ lon: number; lat: number } | null>(null);
+  const pickMarker = useRef<maplibregl.Marker | null>(null);
+  const [job, setJob] = useState<AreaJob | null>(null);
+  const [err, setErr] = useState('');
+  useEffect(() => { pickingRef.current = picking; }, [picking]);
+  useEffect(() => { api.setup().then(s => s.job && setJob(s.job)).catch(() => {}); }, []);
+
+  const refresh = async () => {
+    const m = map.current; if (!m) return;
+    (m.getSource('patches') as maplibregl.GeoJSONSource | undefined)?.setData(await api.consensus());
+    const M = await fetch('/assets/mosaic.json').then(r => r.json()).catch(() => null);
+    const src = m.getSource('radar') as maplibregl.ImageSource | undefined;
+    if (M && src) src.updateImage({ url: `/assets/mosaic_hh.png?t=${Date.now()}`, coordinates: M.corners });
+    else if (M) { m.addSource('radar', { type: 'image', url: `/assets/mosaic_hh.png?t=${Date.now()}`, coordinates: M.corners }); m.addLayer({ id: 'radar', type: 'raster', source: 'radar' }, 'ai'); }
+    api.stats().then(setStats);
+  };
+  const startDownload = async () => {
+    if (!pick) return; setErr('');
+    try { setJob(await api.addArea(pick.lon, pick.lat)); setPick(null); pickMarker.current?.remove(); }
+    catch (e) { setErr((e as Error).message); }
+  };
 
   useEffect(() => {
     const m = new maplibregl.Map({ container: 'livemap', style: SAT_STYLE, center: [30.1, 22.8], zoom: 8 });
     m.addControl(new maplibregl.NavigationControl(), 'bottom-right');
     map.current = m;
+    (window as unknown as { __livemap: maplibregl.Map }).__livemap = m;   // handy for debugging in the console
     m.on('load', async () => {
-      const [cons, sites, M] = await Promise.all([api.consensus(), api.sites(), fetch('/tour/manifest.json').then(r => r.json())]);
-      m.addSource('radar', { type: 'image', url: '/tour/radar_hh.png', coordinates: M.radar.corners });
-      m.addLayer({ id: 'radar', type: 'raster', source: 'radar', layout: { visibility: 'none' }, paint: { 'raster-opacity': .85 } });
+      const [cons, sites, M] = await Promise.all([api.consensus(), api.sites(), fetch('/assets/mosaic.json').then(r => (r.ok ? r.json() : null)).catch(() => null)]);
+      if (M) {
+        m.addSource('radar', { type: 'image', url: `/assets/mosaic_hh.png?t=${Date.now()}`, coordinates: M.corners });
+        m.addLayer({ id: 'radar', type: 'raster', source: 'radar', paint: { 'raster-opacity': .9, 'raster-fade-duration': 0 } });
+      }
       m.addSource('patches', { type: 'geojson', data: cons });
       const pts = cons.features.flatMap(f => (f.geometry as GeoJSON.Polygon).coordinates[0]);
-      m.fitBounds([[Math.min(...pts.map(p => p[0])), Math.min(...pts.map(p => p[1]))], [Math.max(...pts.map(p => p[0])), Math.max(...pts.map(p => p[1]))]], { padding: 30, duration: 0 });
+      if (pts.length) m.fitBounds([[Math.min(...pts.map(p => p[0])), Math.min(...pts.map(p => p[1]))], [Math.max(...pts.map(p => p[0])), Math.max(...pts.map(p => p[1]))]], { padding: 30, duration: 0 });
       m.addLayer({ id: 'ai', type: 'fill', source: 'patches', layout: { visibility: 'none' }, paint: {
         'fill-color': ['interpolate', ['linear'], ['coalesce', ['get', 'ai'], ['get', 'tracer']], 0, '#4a3420', 1, '#ffaa3c'],
-        'fill-opacity': ['interpolate', ['linear'], ['coalesce', ['get', 'ai'], ['get', 'tracer']], 0, 0.05, 1, 0.7] } });
+        'fill-opacity': ['interpolate', ['linear'], ['coalesce', ['get', 'ai'], ['get', 'tracer']], 0, 0, 0.3, 0.05, 1, 0.45] } });
       m.addLayer({ id: 'crowd', type: 'fill', source: 'patches', filter: ['>', ['get', 'votes'], 0], paint: {
         'fill-color': ['interpolate', ['linear'], ['coalesce', ['get', 'channelShare'], 0], 0, '#3a6b8a', 1, '#2fd3ff'],
         'fill-opacity': ['interpolate', ['linear'], ['get', 'votes'], 1, 0.35, 5, 0.75] } });
@@ -43,7 +70,15 @@ export default function LiveMap() {
         const el = document.createElement('div'); el.className = 'sitelabel'; el.textContent = String(f.properties?.name);
         return new maplibregl.Marker({ element: el, anchor: 'top', offset: [0, 10] }).setLngLat((f.geometry as GeoJSON.Point).coordinates as [number, number]).addTo(m);
       });
-      m.on('click', 'outline', e => setSel(e.features?.[0]?.properties ?? null));
+      m.on('click', 'outline', e => { if (!pickingRef.current) setSel(e.features?.[0]?.properties ?? null); });
+      m.on('click', e => {
+        if (!pickingRef.current) return;
+        const p = { lon: +e.lngLat.lng.toFixed(3), lat: +e.lngLat.lat.toFixed(3) };
+        setPick(p); setPicking(false);
+        pickMarker.current?.remove();
+        const el = document.createElement('div'); el.className = 'pickbox';
+        pickMarker.current = new maplibregl.Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(m);
+      });
       m.on('click', 'sites', e => { const p = e.features?.[0]?.properties; if (p) new maplibregl.Popup().setLngLat(e.lngLat).setHTML(`<b>${p.name}</b><br>${p.kind}<br>${p.age_text}<br><i>${p.confidence === 'approximate' ? 'Approximate location' : 'Published location'}</i>`).addTo(m); });
     });
 
@@ -57,6 +92,10 @@ export default function LiveMap() {
       const mk = new maplibregl.Marker({ element: el }).setLngLat(d.center).addTo(m); setTimeout(() => mk.remove(), 2500);
       clearTimeout(timer);
       timer = window.setTimeout(async () => { (m.getSource('patches') as maplibregl.GeoJSONSource | undefined)?.setData(await api.consensus()); api.stats().then(setStats); }, 600);
+    });
+    es.addEventListener('area', ev => {
+      const j = JSON.parse((ev as MessageEvent).data) as AreaJob; setJob(j);
+      if (j.state === 'done' && j.added) { refresh(); m.flyTo({ center: [j.lon, j.lat], zoom: 9 }); }
     });
     api.stats().then(setStats);
     return () => { es.close(); m.remove(); };
@@ -85,6 +124,29 @@ export default function LiveMap() {
           ))}
           <span className="muted small">Red outlines: modern farms, excluded from field plans.</span>
         </div>
+        <div className="card addcard">
+          <h2>Add radar for an area</h2>
+          {job?.state === 'running' ? (
+            <>
+              <p className="small">{job.step}… ({job.lon.toFixed(2)}°E, {job.lat.toFixed(2)}°N)</p>
+              <div className="bar"><i style={{ width: `${job.pct}%` }} /></div>
+              <p className="muted small">Streaming only a 40 × 40 km crop from NASA (about 25 MB). Takes 1–6 minutes depending on your connection.</p>
+            </>
+          ) : pick ? (
+            <>
+              <p className="small">Download NISAR radar around <b>{pick.lon}°E, {pick.lat}°N</b>? About 25 MB from NASA's ASF archive, then cut into about 49 new patches.</p>
+              <div className="row"><button className="primary" onClick={startDownload}>Download this area</button><button onClick={() => { setPick(null); pickMarker.current?.remove(); }}>Cancel</button></div>
+            </>
+          ) : (
+            <>
+              <p className="muted small">Pick a spot next to the existing grid. The app downloads that area's radar and adds it for tagging.</p>
+              <button className={picking ? '' : 'primary'} onClick={() => setPicking(!picking)}>{picking ? 'Click on the map… (cancel)' : 'Pick a spot on the map'}</button>
+            </>
+          )}
+          {job?.state === 'done' && <p className="ok small">{job.added ? `Added ${job.added} patches.` : job.message ?? 'Done.'}</p>}
+          {job?.state === 'error' && <p className="no small">{job.message}</p>}
+          {err && <p className="no small">{err}</p>}
+        </div>
         {sel && (
           <div className="card">
             <h2>Patch {String(sel.id)}</h2>
@@ -97,7 +159,7 @@ export default function LiveMap() {
           <div className="feed">{feed.length ? feed.map((f, i) => <span key={i}>{f.t} · someone tagged {f.id.split('_').slice(1).join('_')} as <b>{f.label.replace('_', ' ')}</b></span>) : <span>Waiting for tags… open “Tag the desert” on a phone.</span>}</div>
         </div>
       </aside>
-      <div className="mapwrap"><div id="livemap" className="map" /></div>
+      <div className={'mapwrap' + (picking ? ' picking' : '')}><div id="livemap" className="map" /></div>
     </div>
   );
 }

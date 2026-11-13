@@ -4,6 +4,8 @@ export type Images = { radar: string; rgb: string; tracer: string; ai: string };
 export type Patch = { id: string; geometry: GeoJSON.Polygon; center: [number, number]; images: Images };
 export type Reveal = { ai: number | null; tracer: number; crowd: { votes: number; channelShare: number | null }; gold: { label: Label; correct: boolean } | null };
 export type Candidate = { id: string; lon: number; lat: number; score: number; votes: number; crowd: number | null; ai: number; nearestSite: string | null; distKm: number | null; why: string[]; images: Images };
+export type AreaJob = { lon: number; lat: number; step: string; pct: number; state: 'running' | 'done' | 'error'; message?: string; added?: number };
+export type Setup = { patchesInDb: number; patchFilesOnDisk: boolean; earthdataLogin: boolean; python: boolean; job: AreaJob | null };
 export type Stats = { patches: number; tags: number; people: number; tagged: number; flagged: number; gold: number };
 
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
@@ -33,6 +35,8 @@ export const api = {
   candidates: (limit = 20) => j<Candidate[]>(`/api/candidates?limit=${limit}`),
   stats: () => j<Stats>('/api/stats'),
   metrics: () => j<Record<string, unknown>>('/api/metrics'),
+  setup: () => j<Setup>('/api/setup'),
+  addArea: (lon: number, lat: number) => j<AreaJob>('/api/areas', { method: 'POST', body: JSON.stringify({ lon, lat }) }),
 };
 
 export const SAT_STYLE: maplibregl.StyleSpecification = {
