@@ -110,3 +110,12 @@ th { color: var(--muted); font-weight: 600; }
 .addcard { border: 1px solid var(--accent); }
 .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; } .bar i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
 .picking .maplibregl-canvas { cursor: crosshair; }
+
+/* map popups: dark like the rest of the app (default is white with our light text) */
+.maplibregl-popup-content { background: #1d1813; color: #f1e7d8; border: 1px solid #4a3d2e; font-size: 13px; line-height: 1.4; }
+.maplibregl-popup-content a { color: #ffaa3c; }
+.maplibregl-popup-close-button { color: #f1e7d8; }
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: #1d1813; }
+.maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: #1d1813; }
+.maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: #1d1813; }
+.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: #1d1813; }

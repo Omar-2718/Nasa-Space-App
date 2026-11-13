@@ -4,12 +4,57 @@ NASA Space Apps 2026, challenge "Dancing with the SARs". NISAR's L-band radar se
 
 Full plan: see `PLAN.md`.
 
-## Run it
+## Install and run (for teammates testing it)
+
+### 1. What you need
+| Tool | Version | Check | Get it |
+|---|---|---|---|
+| Git | any | `git --version` | https://git-scm.com |
+| Docker | Docker Desktop or Docker Engine, with Compose | `docker compose version` | https://docs.docker.com/get-docker/ |
+| Node.js | 20 or newer | `node -v` | https://nodejs.org (LTS) |
+| Python | 3.10 or newer, with `venv` | `python3 -m venv --help` | Ubuntu: `sudo apt install python3-venv` |
+
+**Windows:** use WSL2 (Ubuntu) and run everything inside it, because `dev.sh` is a bash script. Docker Desktop has a WSL2 option.
+**Linux with Docker Desktop:** if `docker` says it can't connect, start it with `systemctl --user start docker-desktop`.
+
+### 2. Get the code and start
+```bash
+git clone https://github.com/Omar-2718/Nasa-Space-App.git
+cd Nasa-Space-App
+./dev.sh
 ```
-./dev.sh          # PostGIS (docker, port 5433), API :3000, web :5173, trust model every 30 s
+The first run takes a few minutes. It installs the npm packages, creates a Python environment in `.venv` (light, no PyTorch), pulls the PostGIS image (about 400 MB), creates the database and seeds it. Later runs start in seconds.
+
+When it prints `running`, open **http://localhost:5173**. Phones on the same Wi-Fi can use the address it prints. Stop everything with Ctrl+C.
+
+### 3. Get radar data (pick one)
+Datasets are not in git. Without data the app still runs and shows "add radar" screens.
+- **A. Team data pack (fastest, no internet needed):** get `beneath-data.zip` from a teammate (USB/Drive) and unzip it in the project folder, then run `./dev.sh` again. To make the pack: `pipeline/pack_data.sh`.
+- **B. Download from NASA in the app:** this needs a free NASA Earthdata account (https://urs.earthdata.nasa.gov). Save your login once (type it yourself, never commit it):
+  ```bash
+  printf 'machine urs.earthdata.nasa.gov login YOUR_USER password YOUR_PASS\n' > ~/.netrc && chmod 600 ~/.netrc
+  ```
+  (If your password has a `%`, edit `~/.netrc` in a text editor instead.) Then in **Live map → Add radar for an area**, pick a size and click squares. One patch (5 km) takes about 30 s on a slow connection.
+
+### 4. Check it works
+- **Tour:** the radar reveal plays.
+- **Live map:** use **Go to site** to jump to known places (Nabta Playa, Gebel Ramlah, Bir Kiseiba, Wadi Howar…) and compare the radar with the photo background. Squares without radar can be added with **Add radar for an area**.
+- **Tag the desert:** tag a few patches; they show up on the Live map within seconds.
+
+### Troubleshooting
+| Problem | Fix |
+|---|---|
+| Port 5433, 3000 or 5173 busy | stop the other program, or change the port in `docker-compose.yml` / `api/.env` (`DATABASE_URL`) |
+| `prisma` errors about the database | `docker compose up -d db` and wait a few seconds, then `./dev.sh` again |
+| "No NASA Earthdata login" in the app | create `~/.netrc` as in step 3B |
+| "NISAR has no dual-polarisation data here yet" | NASA hasn't released that area yet; try squares next to existing radar |
+| Start from an empty database | `docker compose down -v` (deletes all tags!), then `./dev.sh` |
+
+### Optional: the AI model (AI person only)
+```bash
+.venv/bin/pip install -r ml/requirements.txt   # PyTorch, about 2.5 GB: download at home
+.venv/bin/python ml/train.py                   # about 1.5 min on an RTX 3050
 ```
-Open http://localhost:5173. Phones on the same Wi-Fi: http://<your-ip>:5173.
-Retrain the AI after people tag: `.venv/bin/python ml/train.py` (about 1.5 min on an RTX 3050).
 Team gold labels: open http://localhost:5173/?admin#tag (admin key: `ADMIN_KEY` env var, default `sand-admin`).
 
 ## Layout
@@ -22,12 +67,15 @@ Team gold labels: open http://localhost:5173/?admin#tag (admin key: `ADMIN_KEY` 
 | `pipeline/` | Python: download NISAR crops, trace channels, cut patches | anyone |
 | `app/` | first prototype (vanilla JS); reference only | |
 
+## Known sites
+14 places on the map (`api/prisma/seed.ts`), coordinates from Wikipedia's geodata unless marked approximate. Toshka Lakes and Abu Simbel are reference points for checking the radar, not buried-river sites. Oasis and mountain points are centres, not exact dig sites.
+
 ## Data (not in git)
 - `data/` holds raw NISAR crops (`.npz`), re-downloadable with `pipeline/crop_gcov.py` (needs a NASA Earthdata login in `~/.netrc`).
 - `data/patches/*.npz`: 461 patches for ML (HH/HV in dB + tracer masks).
 - `web_assets/patches/`: patch PNGs + `index.json` served to the web app.
 - **Datasets never go in git.** Make a data pack with `pipeline/pack_data.sh` (creates `beneath-data.zip`) and share it by USB or Drive; teammates unzip it in the project root.
-- No data pack? Start the app and use **Live map → Add radar for an area**: it downloads a 40 km area (about 25 MB) from NASA and builds the patches on that computer. Needs a NASA Earthdata login in `~/.netrc`.
+- No data pack? Use **Live map → Add radar for an area** (see install step 3B).
 
 Coverage: about 12,000 km² near the Egypt–Sudan border (around 22.5–23.1°N, 29.2–31.1°E), NISAR GCOV track 079 descending, 17 Oct 2026.
 
@@ -37,7 +85,7 @@ Coverage: about 12,000 km² near the Egypt–Sudan border (around 22.5–23.1°N
 - [ ] `cd web && npm install`, `cd api && npm install`
 - [ ] AI person: `python -m venv .venv && .venv/bin/pip install -r ml/requirements.txt` (torch is about 2.5 GB)
 - [ ] Team: hand-label about 150 patches (gold set)
-- [ ] Verify archaeological site coordinates (Bir Safsaf, Wadi Arid, Bir Kiseiba, Nabta Playa, Bir Tarfawi) against the papers
+- [ ] Find published coordinates for Bir Safsaf and Wadi Arid (not on the map yet), and an exact one for Bir Kiseiba (sources disagree)
 - [ ] Download a Sentinel-2 fallback basemap in case venue internet is bad
 
 ## Rebuild data from scratch
