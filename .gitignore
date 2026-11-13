@@ -3,3 +3,7 @@ __pycache__/
 # raw NISAR crops (re-downloadable with scripts/crop_gcov.py)
 data/**/*.npz
 data/**/*.npy
+# generated patch images (rebuild with pipeline/make_patches.py, or share as a zip)
+web_assets/
+node_modules/
+dist/

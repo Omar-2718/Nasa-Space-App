@@ -1,0 +1,15 @@
+# Skeleton: services get filled in during the event.
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: sand
+      POSTGRES_PASSWORD: sand          # local dev only
+      POSTGRES_DB: beneath
+    ports: ["5432:5432"]
+    volumes: [dbdata:/var/lib/postgresql/data]
+  # api:  NestJS (./api)   -> port 3000
+  # ml:   FastAPI (./ml)   -> port 8000
+  # web:  Vite dev server (./web) -> port 5173, or nginx serving web/dist + web_assets/
+volumes:
+  dbdata:

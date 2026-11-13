@@ -1,0 +1,11 @@
+# ML service + training (install on the AI person's machine BEFORE the event: torch is ~2.5 GB)
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.5.1
+torchvision==0.20.1
+segmentation-models-pytorch==0.3.4
+numpy
+scipy
+pillow
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+psycopg[binary]==3.2.3

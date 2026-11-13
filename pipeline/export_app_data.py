@@ -44,7 +44,7 @@ hh = st(H, hl, hh_); hv = st(V, vl, vh); r = H - V; ratio = st(r, np.nanpercenti
 Image.fromarray(np.dstack([hh, hh, hh, a])).save(f'{OUT}/radar_hh.png', optimize=True)
 Image.fromarray(np.dstack([hh, hv, ratio, a])).save(f'{OUT}/radar_rgb.png', optimize=True)
 manifest = {'radar': {'corners': [[W_, N_], [E_, N_], [E_, S_], [W_, S_]], 'size_px': [w, h]}}
-subprocess.run([sys.executable, '-W', 'ignore', 'scripts/trace_channels.py', f'{OUT}/channels.geojson', 'data/trace_all.png', *tiles], check=True)
+subprocess.run([sys.executable, '-W', 'ignore', 'pipeline/trace_channels.py', f'{OUT}/channels.geojson', 'data/trace_all.png', *tiles], check=True)
 g = json.load(open(f'{OUT}/channels.geojson'))
 manifest['channels_km'] = round(sum(f['properties'].get('len_km', 0) for f in g['features']))
 manifest['date'] = '2026-10-17'

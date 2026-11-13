@@ -76,9 +76,8 @@ def valleys(sm, valid):
 def chain_length(lines):
     return sum(np.hypot(*np.diff(l, axis=0).T).sum() for l in lines)
 
-features, dbg = [], []
-out, debug = sys.argv[1], sys.argv[2]
-for npz in sys.argv[3:]:
+def trace_tile(npz):
+    """Run the tracer on one tile. Returns dict with 40 m grid arrays, pixel lines, valley contours and masks."""
     db, valid, x, y, epsg = load(npz)
     m, sm = ridge_mask(db, valid)
     skel = skeletonize(m)
@@ -88,26 +87,41 @@ for npz in sys.argv[3:]:
         comp = lab[sl] == i
         if comp.sum() >= MIN_LEN_PX: keep[sl] |= comp
     lines = [l for l in trace(keep) if len(l) >= 20]
-    tf = Transformer.from_crs(epsg, 4326, always_xy=True)
-    for l in lines:
-        s = approximate_polygon(l.astype(float), tolerance=2.0)
-        lon, lat = tf.transform(x[s[:, 1].astype(int)], y[s[:, 0].astype(int)])
-        features.append({'type': 'Feature', 'properties': {'kind': 'channel', 'len_km': round(float(np.hypot(*np.diff(l, axis=0).T).sum()) * 0.04, 2)},
-                         'geometry': {'type': 'LineString', 'coordinates': [[round(a, 5), round(b, 5)] for a, b in zip(lon, lat)]}})
     vs = valleys(sm, valid)
+    line_mask = np.zeros_like(keep)
+    for l in lines: line_mask[l[:, 0], l[:, 1]] = True
+    from skimage.draw import polygon as fillpoly
+    valley_mask = np.zeros_like(keep)
     for c in vs:
-        c = approximate_polygon(c - 1, tolerance=2.0); c = np.clip(c, 0, [len(y) - 1, len(x) - 1])
-        lon, lat = tf.transform(x[c[:, 1].astype(int)], y[c[:, 0].astype(int)])
-        ring = [[round(a, 5), round(b, 5)] for a, b in zip(lon, lat)]
-        features.append({'type': 'Feature', 'properties': {'kind': 'valley'}, 'geometry': {'type': 'Polygon', 'coordinates': [ring]}})
-    dbg.append((npz, sm, valid, lines, vs))
-    print(npz, 'lines', len(lines), 'total km', round(chain_length(lines) * 0.04, 1))
+        rr, cc = fillpoly(c[:, 0] - 1, c[:, 1] - 1, valley_mask.shape); valley_mask[rr, cc] = True
+    return dict(db=db, sm=sm, valid=valid, x=x, y=y, epsg=epsg, lines=lines, valleys=vs,
+                line_mask=line_mask, valley_mask=valley_mask)
 
-json.dump({'type': 'FeatureCollection', 'features': features}, open(out, 'w'))
-fig, ax = plt.subplots(1, len(dbg), figsize=(9 * len(dbg), 9), squeeze=False)
-for a, (name, sm, valid, lines, vs) in zip(ax[0], dbg):
-    for c in vs: a.fill(c[:, 1] - 1, c[:, 0] - 1, color='#2fd3ff', alpha=.25)
-    lo, hi = np.percentile(sm[valid], [2, 98]); a.imshow(sm, cmap='gray', vmin=lo, vmax=hi)
-    for l in lines: a.plot(l[:, 1], l[:, 0], color='#2fd3ff', lw=1.2)
-    a.set_title(name); a.axis('off')
-plt.tight_layout(); plt.savefig(debug, dpi=55)
+def main():
+    features, dbg = [], []
+    out, debug = sys.argv[1], sys.argv[2]
+    for npz in sys.argv[3:]:
+        T = trace_tile(npz); sm, valid, x, y, epsg, lines, vs = T['sm'], T['valid'], T['x'], T['y'], T['epsg'], T['lines'], T['valleys']
+        tf = Transformer.from_crs(epsg, 4326, always_xy=True)
+        for l in lines:
+            s_ = approximate_polygon(l.astype(float), tolerance=2.0)
+            lon, lat = tf.transform(x[s_[:, 1].astype(int)], y[s_[:, 0].astype(int)])
+            features.append({'type': 'Feature', 'properties': {'kind': 'channel', 'len_km': round(float(np.hypot(*np.diff(l, axis=0).T).sum()) * 0.04, 2)},
+                             'geometry': {'type': 'LineString', 'coordinates': [[round(a, 5), round(b, 5)] for a, b in zip(lon, lat)]}})
+        for c in vs:
+            c = approximate_polygon(c - 1, tolerance=2.0); c = np.clip(c, 0, [len(y) - 1, len(x) - 1])
+            lon, lat = tf.transform(x[c[:, 1].astype(int)], y[c[:, 0].astype(int)])
+            features.append({'type': 'Feature', 'properties': {'kind': 'valley'}, 'geometry': {'type': 'Polygon', 'coordinates': [[[round(a, 5), round(b, 5)] for a, b in zip(lon, lat)]]}})
+        dbg.append((npz, sm, valid, lines, vs))
+        print(npz, 'lines', len(lines), 'total km', round(chain_length(lines) * 0.04, 1))
+    json.dump({'type': 'FeatureCollection', 'features': features}, open(out, 'w'))
+    fig, ax = plt.subplots(1, len(dbg), figsize=(9 * len(dbg), 9), squeeze=False)
+    for a, (name, sm, valid, lines, vs) in zip(ax[0], dbg):
+        for c in vs: a.fill(c[:, 1] - 1, c[:, 0] - 1, color='#2fd3ff', alpha=.25)
+        lo, hi = np.percentile(sm[valid], [2, 98]); a.imshow(sm, cmap='gray', vmin=lo, vmax=hi)
+        for l in lines: a.plot(l[:, 1], l[:, 0], color='#2fd3ff', lw=1.2)
+        a.set_title(name); a.axis('off')
+    plt.tight_layout(); plt.savefig(debug, dpi=55)
+
+if __name__ == '__main__':
+    main()
