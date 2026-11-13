@@ -10,10 +10,13 @@ const ASSETS = process.env.ASSETS_DIR ?? ROOT + 'web_assets';
 type IndexRec = { id: string; tile: string; corners: number[][]; center: number[]; tracer_line_frac: number; tracer_valley_frac: number };
 
 // Only sites with a citable location. 'approximate' = sources disagree or the location is from a database, not a survey.
-// Bir Safsaf and Wadi Arid are left out until their coordinates are verified from the 1980s field papers.
+// Wadi Arid is left out: no published coordinates found (checked 2026-11-13).
 // Coordinates: Wikipedia geodata (checked 2026-11-13) unless noted. Oasis/mountain points are centres, not exact sites.
 const SITES = [
   // Known buried rivers (shown in gold): published radar or field discoveries, for comparing with what we trace.
+  { name: 'Bir Safsaf radar rivers', kind: 'Buried river channels seen by Space Shuttle radar (SIR-C, 1994)', age: 'Mid-Tertiary to Quaternary',
+    note: 'Inside our radar area. Point is the centre of NASA image PIA01825; its buried channels are in the image\'s southern part. Field teams found Stone Age tools in channel sediments nearby.', confidence: 'approximate',
+    url: 'https://www.jpl.nasa.gov/images/pia01825-space-radar-image-of-safsaf-oasis-egypt/', lon: 29.3, lat: 22.7 },
   { name: 'Wadi Howar', kind: "Buried river: the 'Yellow Nile'", age: 'Flowed until c. 2,000 BCE',
     note: 'Sudan. Dried Nile tributary, about 1,100 km long, now partly under sand.', confidence: 'published',
     url: 'https://en.wikipedia.org/wiki/Wadi_Howar', lon: 30.7406, lat: 18.1989 },

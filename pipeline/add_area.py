@@ -29,7 +29,7 @@ def main():
     cells = sorted({tuple(map(int, c.split(':'))) for c in a.cells.split(',') if c})
     if not cells: say('done', 100, added=0, message='Nothing to download: this area is already covered.'); return
     if not os.path.exists(os.path.expanduser('~/.netrc')):
-        say('error', 0, message='No NASA Earthdata login on this computer. Add it to ~/.netrc (see README).'); sys.exit(1)
+        say('error', 0, message='No NASA Earthdata login on this computer yet. Connect it on the first page of the app.'); sys.exit(1)
 
     from pyproj import Transformer
     to_ll = Transformer.from_crs(a.epsg, 4326, always_xy=True)
@@ -128,4 +128,9 @@ if __name__ == '__main__':
     try: main()
     except SystemExit: raise
     except Exception as e:
-        say('error', 0, message=f'{type(e).__name__}: {e}'); sys.exit(1)
+        txt = f'{type(e).__name__}: {e}'
+        if any(k in txt for k in ('401', '403', 'Unauthorized', 'Forbidden')):
+            # usually a new Earthdata account that hasn't approved NASA's radar archive (ASF) yet
+            txt = ('NASA refused the download. If your Earthdata account is new, log in once at https://search.asf.alaska.edu '
+                   'and accept the data terms, then try again. Otherwise reconnect your NASA login in the app.')
+        say('error', 0, message=txt); sys.exit(1)

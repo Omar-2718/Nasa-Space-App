@@ -27,18 +27,18 @@ The first run takes a few minutes. It installs the npm packages, creates a Pytho
 
 When it prints `running`, open **http://localhost:5173**. Phones on the same Wi-Fi can use the address it prints. Stop everything with Ctrl+C.
 
-### 3. Get radar data (pick one)
-Datasets are not in git. Without data the app still runs and shows "add radar" screens.
-- **A. Team data pack (fastest, no internet needed):** get `beneath-data.zip` from a teammate (USB/Drive) and unzip it in the project folder, then run `./dev.sh` again. To make the pack: `pipeline/pack_data.sh`.
-- **B. Download from NASA in the app:** this needs a free NASA Earthdata account (https://urs.earthdata.nasa.gov). Save your login once (type it yourself, never commit it):
-  ```bash
-  printf 'machine urs.earthdata.nasa.gov login YOUR_USER password YOUR_PASS\n' > ~/.netrc && chmod 600 ~/.netrc
-  ```
-  (If your password has a `%`, edit `~/.netrc` in a text editor instead.) Then in **Live map → Add radar for an area**, pick a size and click squares. One patch (5 km) takes about 30 s on a slow connection.
+### 3. Connect your NASA account (once) and download radar
+Radar comes straight from NASA on each computer, so you don't need anyone's data files.
+1. Make a free NASA Earthdata account: https://urs.earthdata.nasa.gov/users/new
+2. **New accounts only:** log in once at https://search.asf.alaska.edu with that account and accept the data terms. NISAR radar is served by ASF, and it may refuse downloads until you do.
+3. Open the app on the computer running it (http://localhost:5173). The first page asks for your Earthdata username and password. The app checks them with NASA and saves them only on that computer, in `~/.netrc`. Phones on the Wi-Fi can't see or change them.
+4. **Live map → Add radar for an area:** pick a size and click squares. One 5 km square takes about 30 s on a slow connection. Squares you already have are skipped.
+
+Offline option: `pipeline/pack_data.sh` zips this computer's radar (`beneath-data.zip`). Unzip it in another copy's project folder and run `./dev.sh` again.
 
 ### 4. Check it works
 - **Tour:** the radar reveal plays.
-- **Live map:** use **Go to site** to jump to known places (Nabta Playa, Gebel Ramlah, Bir Kiseiba, Wadi Howar…) and compare the radar with the photo background. Squares without radar can be added with **Add radar for an area**.
+- **Live map:** the example squares at the top show what a buried river looks like and what doesn't count. **Go to site** jumps to known places (★ = published buried rivers, like the Bir Safsaf radar rivers inside our area).
 - **Live map:** blue lines are traced buried channels and blue areas are buried valleys (lines on modern farms are hidden).
 
 ### Troubleshooting
@@ -46,7 +46,8 @@ Datasets are not in git. Without data the app still runs and shows "add radar" s
 |---|---|
 | Port 5433, 3000 or 5173 busy | stop the other program, or change the port in `docker-compose.yml` / `api/.env` (`DATABASE_URL`) |
 | `prisma` errors about the database | `docker compose up -d db` and wait a few seconds, then `./dev.sh` again |
-| "No NASA Earthdata login" in the app | create `~/.netrc` as in step 3B |
+| "No NASA Earthdata login" in the app | connect it on the first page (step 3) |
+| "NASA refused the download" | new account: do step 3.2, then try again |
 | "NISAR has no dual-polarisation data here yet" | NASA hasn't released that area yet; try squares next to existing radar |
 | Start from an empty database | `docker compose down -v` (deletes the database), then `./dev.sh` |
 
@@ -67,7 +68,7 @@ Datasets are not in git. Without data the app still runs and shows "add radar" s
 | `app/` | first prototype (vanilla JS); reference only | |
 
 ## Known sites
-16 places on the map: 3 published buried rivers in gold (Wadi Howar, Kufrah radar river, Ahramat Nile Branch) and 13 sites (`api/prisma/seed.ts`), coordinates from Wikipedia's geodata unless marked approximate. Toshka Lakes and Abu Simbel are reference points for checking the radar, not buried-river sites. Oasis and mountain points are centres, not exact dig sites.
+17 places on the map: 4 published buried rivers in gold (Bir Safsaf radar rivers, Wadi Howar, Kufrah radar river, Ahramat Nile Branch) and 13 sites (`api/prisma/seed.ts`), coordinates from Wikipedia's geodata unless marked approximate. Toshka Lakes and Abu Simbel are reference points for checking the radar, not buried-river sites. Oasis and mountain points are centres, not exact dig sites.
 
 ## Data (not in git)
 - `data/` holds raw NISAR crops (`.npz`), re-downloadable with `pipeline/crop_gcov.py` (needs a NASA Earthdata login in `~/.netrc`).
@@ -79,12 +80,12 @@ Datasets are not in git. Without data the app still runs and shows "add radar" s
 Coverage: about 12,000 km² near the Egypt–Sudan border (around 22.5–23.1°N, 29.2–31.1°E), NISAR GCOV track 079 descending, 17 Oct 2026.
 
 ## Pre-event checklist (slow internet: do these at home)
-- [ ] Everyone: `git clone`, then copy the data zip into the repo root
+- [ ] Everyone: `git clone`, make an Earthdata account, accept the ASF terms (step 3)
 - [ ] `docker compose pull` (PostGIS image, about 400 MB)
 - [ ] `cd web && npm install`, `cd api && npm install`
 - [ ] AI person: `python -m venv .venv && .venv/bin/pip install -r ml/requirements.txt` (torch is about 2.5 GB)
 - [ ] Team: hand-label about 150 patches (gold set)
-- [ ] Find published coordinates for Bir Safsaf and Wadi Arid (not on the map yet), and an exact one for Bir Kiseiba (sources disagree)
+- [ ] Find published coordinates for Wadi Arid (not on the map) and exact ones for Bir Kiseiba and the Bir Safsaf channels (map points are approximate)
 - [ ] Download a Sentinel-2 fallback basemap in case venue internet is bad
 
 ## Rebuild data from scratch

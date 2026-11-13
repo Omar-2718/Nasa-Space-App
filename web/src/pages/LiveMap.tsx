@@ -2,6 +2,7 @@
 // and on-demand radar downloads.
 import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
+import EarthdataConnect, { useEarthdata } from '../Earthdata';
 import { api, sessionId, SAT_STYLE, setBasemap, pct, type Stats, type AreaJob, type Basemap, type Label, type Reveal } from '../api';
 
 const TAGS: { label: Label; text: string }[] = [
@@ -29,6 +30,28 @@ const riverStats = (fc: GeoJSON.FeatureCollection): RiverStats => ({
   km: Math.round(fc.features.reduce((a, f) => a + Number(f.properties?.len_km ?? 0), 0)),
   channels: fc.features.filter(f => f.properties?.kind === 'channel').length,
   valleys: fc.features.filter(f => f.properties?.kind === 'valley').length });
+
+// Overview radar: one image per separate area (mosaic.json "parts"; older files have only "corners").
+type Mosaic = { corners: number[][]; parts?: { file: string; corners: number[][] }[] };
+const isRadar = (id: string) => id === 'radar' || id.startsWith('radar_');
+function setRadar(m: maplibregl.Map, M: Mosaic) {
+  for (const l of m.getStyle().layers) if (isRadar(l.id)) { m.removeLayer(l.id); m.removeSource(l.id); }
+  const parts = M.parts ?? [{ file: 'mosaic_hh.png', corners: M.corners }];
+  parts.forEach((p, k) => {
+    const id = k === 0 ? 'radar' : `radar_${k}`;
+    m.addSource(id, { type: 'image', url: `/layers/${p.file}?t=${Date.now()}`, coordinates: p.corners as [[number, number], [number, number], [number, number], [number, number]] });
+    m.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': .9, 'raster-fade-duration': 0 } }, m.getLayer('ai') ? 'ai' : undefined);
+  });
+}
+
+// Example squares from our own radar, picked by eye, so people learn what to look for.
+const EXAMPLES = [
+  { id: '32636_24_488', at: [29.3581, 22.5757] as [number, number], river: true, title: 'Buried river channel', text: 'A long dark winding band: thick sand filling an old riverbed.' },
+  { id: '32636_22_489', at: [29.2575, 22.6195] as [number, number], river: true, title: 'Wide riverbed', text: 'Broad dark branching areas with smooth edges, near Bir Safsaf.' },
+  { id: '32636_35_489', at: [29.9040, 22.6333] as [number, number], river: false, title: 'Plain sand sheet', text: 'Evenly dark everywhere, no shape: deep sand, nothing to trace.' },
+  { id: '32636_32_490', at: [29.7537, 22.6765] as [number, number], river: false, title: 'Rocky hills', text: 'Bright patchy blobs with no long direction.' },
+  { id: '32636_59_490', at: [31.0982, 22.6982] as [number, number], river: false, title: 'Modern farms', text: 'Perfect circles and straight lines: irrigation, not rivers.' },
+];
 
 export default function LiveMap() {
   const map = useRef<maplibregl.Map | null>(null);
@@ -77,6 +100,7 @@ export default function LiveMap() {
     (map.current?.getSource('patches') as maplibregl.GeoJSONSource | undefined)?.setData(cons); api.stats().then(setStats);
   };
   const [base, setBase] = useState<Basemap>('s2');
+  const [ed, setEd] = useEarthdata();
   const [siteList, setSiteList] = useState<GeoJSON.Feature[]>([]);
   useEffect(() => { const m = map.current; if (m?.getLayer('s2')) setBasemap(m, base); }, [base]);
   // on-demand coverage: choose a size (n x n patches on the real patch grid), click, review, download only missing cells
@@ -125,9 +149,7 @@ export default function LiveMap() {
     const cons = await api.consensus(); patchesRef.current = cons;
     (m.getSource('patches') as maplibregl.GeoJSONSource | undefined)?.setData(cons); updateHiRes();
     const M = await fetch('/layers/mosaic.json').then(r => r.json()).catch(() => null);
-    const src = m.getSource('radar') as maplibregl.ImageSource | undefined;
-    if (M && src) src.updateImage({ url: `/layers/mosaic_hh.png?t=${Date.now()}`, coordinates: M.corners });
-    else if (M) { m.addSource('radar', { type: 'image', url: `/layers/mosaic_hh.png?t=${Date.now()}`, coordinates: M.corners }); m.addLayer({ id: 'radar', type: 'raster', source: 'radar' }, 'ai'); }
+    if (M) setRadar(m, M);
     const riv = await loadRivers(); (m.getSource('rivers') as maplibregl.GeoJSONSource | undefined)?.setData(riv); setRs(riverStats(riv));
     api.stats().then(setStats);
   };
@@ -141,10 +163,7 @@ export default function LiveMap() {
     m.on('load', async () => {
       const [cons, sites, M, riv] = await Promise.all([api.consensus(), api.sites(), fetch('/layers/mosaic.json').then(r => (r.ok ? r.json() : null)).catch(() => null), loadRivers()]);
       setRs(riverStats(riv));
-      if (M) {
-        m.addSource('radar', { type: 'image', url: `/layers/mosaic_hh.png?t=${Date.now()}`, coordinates: M.corners });
-        m.addLayer({ id: 'radar', type: 'raster', source: 'radar', paint: { 'raster-opacity': .9, 'raster-fade-duration': 0 } });
-      }
+      if (M) setRadar(m, M);
       m.addSource('patches', { type: 'geojson', data: cons }); patchesRef.current = cons;
       // open on the main block of radar: patches within ~3° of the median centre (one far-off square shouldn't zoom out the map)
       const cs = cons.features.map(f => (f.geometry as GeoJSON.Polygon).coordinates[0][0]);
@@ -192,7 +211,7 @@ export default function LiveMap() {
 
   useEffect(() => {
     const m = map.current; if (!m?.isStyleLoaded()) return;
-    for (const [k, v] of Object.entries(on)) for (const id of LAYER_IDS[k] ?? [k]) if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', v ? 'visible' : 'none');
+    for (const [k, v] of Object.entries(on)) for (const id of k === 'radar' ? m.getStyle().layers.map(l => l.id).filter(isRadar) : LAYER_IDS[k] ?? [k]) if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', v ? 'visible' : 'none');
     radarOn.current = on.radar; updateHiRes();
     labels.current.forEach(mk => { mk.getElement().style.display = on.sites ? '' : 'none'; });
   }, [on]);
@@ -203,9 +222,27 @@ export default function LiveMap() {
         <p className="eyebrow">Live map</p>
         <h1>Where the buried rivers are</h1>
         <p className="muted small">Everything blue is one thing: buried rivers, traced from NISAR L-band radar, which sees through dry sand. Thin lines are narrow channels; filled areas are wide old riverbeds (valleys) the rivers cut. Space Shuttle radar first discovered buried rivers in this part of the Sahara in 1981 (McCauley et al. 1982). These are candidates for experts to check, not confirmed finds.</p>
+        <div className="examples">
+          <h2>What a buried river looks like</h2>
+          <div className="exgrid">
+            {EXAMPLES.map(e => (
+              <button key={e.id} className={'ex ' + (e.river ? 'yes' : 'no')} title={e.text} onClick={() => {
+                const f = patchesRef.current?.features.find(x => x.properties?.id === e.id); const m = map.current; if (!m) return;
+                if (!f) { m.flyTo({ center: e.at, zoom: 11.5 }); return; }   // not downloaded on this computer yet: show where it is
+                const r = (f.geometry as GeoJSON.Polygon).coordinates[0];
+                m.fitBounds([[Math.min(...r.map(c => c[0])), Math.min(...r.map(c => c[1]))], [Math.max(...r.map(c => c[0])), Math.max(...r.map(c => c[1]))]], { padding: 80, maxZoom: 12.5 });
+                setSel(f.properties ?? null);
+              }}>
+                <img src={`/examples/${e.id}.jpg`} alt={e.title} />
+                <b>{e.river ? '✓ ' : '✗ '}{e.title}</b>
+                <span>{e.text}</span>
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="stats">
           <div className="stat"><b>{rs ? rs.km.toLocaleString() : '–'}</b><span>km of buried channels</span></div>
-          <div className="stat"><b>{rs?.valleys ?? '–'}</b><span>wide old riverbeds</span></div>
+          <div className="stat"><b>{rs?.valleys ?? '–'}</b><span>riverbed areas</span></div>
           <div className="stat"><b>{stats?.patches ?? '–'}</b><span>5 km squares with radar</span></div>
           <div className="stat"><b>{siteList.length || '–'}</b><span>known sites</span></div>
         </div>
@@ -232,6 +269,7 @@ export default function LiveMap() {
         </div>
         <div className="card addcard">
           <h2>Add radar for an area</h2>
+          {ed && !ed.connected ? <EarthdataConnect status={ed} onChange={setEd} compact /> : <>
           <label className="small">Size
             <select value={n} onChange={e => { setN(Number(e.target.value)); setPreview(null); }} style={{ marginLeft: 8, background: 'var(--bg)', color: 'var(--fg)', border: '1px solid var(--line)', borderRadius: 4, padding: '3px 6px' }}>
               {SIZES.map(k => <option key={k} value={k}>{k === 1 ? '1 patch (click to add instantly)' : `${k} × ${k} = ${k * k} patches`}</option>)}
@@ -265,6 +303,7 @@ export default function LiveMap() {
           {job?.state === 'done' && <p className="ok small">{job.added ? `Added ${job.added} patch${job.added === 1 ? '' : 'es'}.` : job.message ?? 'Done.'}</p>}
           {job?.state === 'error' && <p className="no small">{job.message}</p>}
           {err && <p className="no small">{err}</p>}
+          </>}
         </div>
         {sel && (
           <div className="card">

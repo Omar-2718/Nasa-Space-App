@@ -24,23 +24,28 @@ def cached_features(t):
         if isinstance(f, list): return f
     f = tile_features(trace_tile(t)); json.dump(f, open(cache, 'w')); return f
 
-def build():
-    os.makedirs(OUT, exist_ok=True)
-    tiles = all_tiles()
-    if not tiles:
-        for f in ('mosaic_hh.png', 'mosaic.json', 'channels.geojson'):
-            if os.path.exists(f'{OUT}/{f}'): os.remove(f'{OUT}/{f}')
-        print('no tiles: map layers removed'); return
-    st = json.load(open(STRETCH)) if os.path.exists(STRETCH) else compute_stretch(tiles)
-    bb = []
-    for t in tiles:
-        C = np.load(t); bb.append(transform_bounds(int(C['epsg']), 4326, C['x'][0], C['y'][-1], C['x'][-1], C['y'][0]))
+def clusters(bb, gap=0.3):
+    """Group tile boxes that touch or sit within `gap` degrees, so far-apart areas get their own image
+    (one image spanning them would be mostly empty and blurry)."""
+    group = list(range(len(bb)))
+    def root(i):
+        while group[i] != i: i = group[i]
+        return i
+    for i in range(len(bb)):
+        for j in range(i):
+            a, b = bb[i], bb[j]
+            if a[0] - gap <= b[2] and b[0] - gap <= a[2] and a[1] - gap <= b[3] and b[1] - gap <= a[3]: group[root(i)] = root(j)
+    out = {}
+    for i in range(len(bb)): out.setdefault(root(i), []).append(i)
+    return sorted(out.values(), key=len, reverse=True)          # biggest area first
+
+def render(tiles, bb, st, polys, name):
+    """One north-up HH image for a group of tiles, clipped to the patch squares. Returns its corners and size."""
     W, S, E, N = min(b[0] for b in bb), min(b[1] for b in bb), max(b[2] for b in bb), max(b[3] for b in bb)
     res = max(0.0004, (E - W) / MAX_PX, (N - S) / MAX_PX)        # ~40 m, coarser only for very large areas
     w, h = int((E - W) / res) + 1, int((N - S) / res) + 1
     dst_t = from_origin(W, N, res, res)
     mos = np.full((h, w), np.nan, np.float32)
-    features = []
     for t in tiles:
         C = np.load(t)
         a = C['HH'].astype(np.float32); a[a <= 0] = np.nan
@@ -48,7 +53,6 @@ def build():
         reproject(a, tmp, src_transform=from_origin(C['x'][0] - 10, C['y'][0] + 10, 20, 20), src_crs=f"EPSG:{int(C['epsg'])}",
                   dst_transform=dst_t, dst_crs='EPSG:4326', resampling=Resampling.average, src_nodata=np.nan, dst_nodata=np.nan)
         mos = np.where(np.isnan(mos), tmp, mos)
-        features += cached_features(t)
         print('layered', t, flush=True)
     # close hairline seams between neighbouring tiles (they don't quite touch after reprojection):
     # fill empty pixels within 3 px of data with the nearest value
@@ -58,22 +62,45 @@ def build():
         dist, (ri, ci) = ndi.distance_transform_edt(empty, return_indices=True)
         near = empty & (dist <= 3)
         mos[near] = mos[ri[near], ci[near]]
-    # show radar only inside patch squares, so the map shows exactly what can be tagged
+    # show radar only inside patch squares, so the map shows exactly what has a patch
     # (crops extend past the last complete grid cell; those edge strips have no patch)
-    idx_path = 'web_assets/patches/index.json'
-    if os.path.exists(idx_path):
+    if polys:
         from rasterio.features import rasterize
-        polys = [{'type': 'Polygon', 'coordinates': [p['corners'] + [p['corners'][0]]]} for p in json.load(open(idx_path))]
-        if polys:
-            inside = rasterize(((g_, 1) for g_ in polys), out_shape=mos.shape, transform=dst_t, fill=0, dtype='uint8', all_touched=True).astype(bool)
-            mos[~inside] = np.nan
+        inside = rasterize(((g_, 1) for g_ in polys), out_shape=mos.shape, transform=dst_t, fill=0, dtype='uint8', all_touched=True).astype(bool)
+        mos[~inside] = np.nan
+    m = ~np.isnan(mos)
+    g = (np.clip((10 * np.log10(np.clip(np.nan_to_num(mos), 1e-6, None)) - st['HL']) / (st['HH'] - st['HL']), 0, 1) * 255).astype(np.uint8)
+    Image.fromarray(np.dstack([g, np.where(m, 255, 0).astype(np.uint8)]), 'LA').save(f'{OUT}/{name}', compress_level=3)   # grey + alpha: half the size of RGBA
+    return {'file': name, 'corners': [[W, N], [E, N], [E, S], [W, S]], 'bounds': [[W, S], [E, N]], 'size_px': [w, h]}
+
+def build():
+    os.makedirs(OUT, exist_ok=True)
+    for f in os.listdir(OUT):                                   # old per-area images
+        if f.startswith('mosaic_hh') and f.endswith('.png'): os.remove(f'{OUT}/{f}')
+    tiles = all_tiles()
+    if not tiles:
+        for f in ('mosaic.json', 'channels.geojson'):
+            if os.path.exists(f'{OUT}/{f}'): os.remove(f'{OUT}/{f}')
+        print('no tiles: map layers removed'); return
+    st = json.load(open(STRETCH)) if os.path.exists(STRETCH) else compute_stretch(tiles)
+    bb = []
+    for t in tiles:
+        C = np.load(t); bb.append(transform_bounds(int(C['epsg']), 4326, C['x'][0], C['y'][-1], C['x'][-1], C['y'][0]))
+    idx_path = 'web_assets/patches/index.json'
+    idx = json.load(open(idx_path)) if os.path.exists(idx_path) else []
+    polys = [{'type': 'Polygon', 'coordinates': [p['corners'] + [p['corners'][0]]]} for p in idx]
+    # the biggest area keeps the name mosaic_hh.png (the tour uses it); others get mosaic_hh_1.png, ...
+    parts = [render([tiles[i] for i in grp], [bb[i] for i in grp], st, polys, 'mosaic_hh.png' if k == 0 else f'mosaic_hh_{k}.png')
+             for k, grp in enumerate(clusters(bb))]
+    features = []
+    for t in tiles: features += cached_features(t)
     # river layer = what the radar squares show: clip traced features to the patch squares,
-    # minus modern farms (pivot circles and canals look like channels to the tracer)
-    if os.path.exists(idx_path):
+    # minus modern farms and lakebeds (pivot circles, canals and shorelines look like channels to the tracer)
+    if idx:
         from shapely.geometry import Polygon, shape, mapping
         from shapely.ops import unary_union
-        modern = set(json.load(open('pipeline/modern_zones.json'))['patches'])
-        idx = json.load(open(idx_path))
+        zones = json.load(open('pipeline/modern_zones.json'))
+        modern = set(zones['patches']) | set(zones.get('toshka_lakebed', []))
         keep = unary_union([Polygon(p['corners']) for p in idx if p['id'] not in modern]).buffer(0)
         clipped = []
         for f in features:
@@ -83,23 +110,20 @@ def build():
                 f['properties']['len_km'] = round(f['properties']['len_km'] * g.length / max(shape(f['geometry']).length, 1e-12), 2)
             clipped.append({**f, 'geometry': mapping(g)})
         features = clipped
-    m = ~np.isnan(mos)
-    g = (np.clip((10 * np.log10(np.clip(np.nan_to_num(mos), 1e-6, None)) - st['HL']) / (st['HH'] - st['HL']), 0, 1) * 255).astype(np.uint8)
-    Image.fromarray(np.dstack([g, np.where(m, 255, 0).astype(np.uint8)]), 'LA').save(f'{OUT}/mosaic_hh.png', compress_level=3)   # grey + alpha: half the size of RGBA
     json.dump({'type': 'FeatureCollection', 'features': features}, open(f'{OUT}/channels.geojson', 'w'))
-    # tour focus: centre of the biggest traced valley, else of the densest channels, else the mosaic centre
+    # tour focus: centre of the biggest traced valley, else of the densest channels, else the main image centre
+    main = parts[0]; (W, S), (E, N) = main['bounds']
     focus = [(W + E) / 2, (S + N) / 2]
+    from shapely.geometry import shape
     vals = [f for f in features if f['properties']['kind'] == 'valley']
     if vals:
-        from shapely.geometry import shape
         c = shape(max(vals, key=lambda f: f['properties']['area_px'])['geometry']).centroid; focus = [c.x, c.y]
     elif features:
-        from shapely.geometry import shape
         pts = np.array([(c.x, c.y) for c in (shape(f['geometry']).centroid for f in features)]); focus = np.median(pts, 0).tolist()
     km = sum(f['properties'].get('len_km', 0) for f in features)
-    json.dump({'corners': [[W, N], [E, N], [E, S], [W, S]], 'bounds': [[W, S], [E, N]], 'focus': [round(focus[0], 4), round(focus[1], 4)],
-               'tiles': len(tiles), 'size_px': [w, h], 'channels_km': round(km)}, open(f'{OUT}/mosaic.json', 'w'))
-    print(f'mosaic {w}x{h} px from {len(tiles)} tiles, {round(km)} km of traced channels, focus {focus}')
+    json.dump({'corners': main['corners'], 'bounds': main['bounds'], 'parts': parts, 'focus': [round(focus[0], 4), round(focus[1], 4)],
+               'tiles': len(tiles), 'size_px': main['size_px'], 'channels_km': round(km)}, open(f'{OUT}/mosaic.json', 'w'))
+    print(f"{len(parts)} radar image(s) {[p['size_px'] for p in parts]} from {len(tiles)} tiles, {round(km)} km of traced channels, focus {focus}")
 
 if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))

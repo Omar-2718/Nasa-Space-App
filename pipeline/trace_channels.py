@@ -73,6 +73,20 @@ def valleys(sm, valid):
     keep = ndi.binary_fill_holes(keep)
     return [c for c in find_contours(np.pad(keep, 1).astype(float), 0.5) if len(c) > 40]
 
+def narrow_channels(sm, valid, wide):
+    """Narrower buried channels (a few hundred metres wide, km long): dark winding bands at ~1 km scale that are
+    too thin for valleys() and too wide or rough-edged for the line tracer. Returns contours like valleys()."""
+    from skimage.measure import label, regionprops, find_contours
+    from skimage.morphology import binary_opening
+    flat = ndi.gaussian_filter(sm, 2) - ndi.gaussian_filter(sm, 25)          # local darkness
+    ok = ndi.binary_erosion(valid, iterations=10) & ~ndi.binary_dilation(wide, iterations=3)
+    dark = binary_opening((flat < np.percentile(flat[ok], 10)) & ok, disk(2))
+    lab = label(dark); keep = np.zeros_like(dark)
+    for r in regionprops(lab):
+        if r.area >= 250 and r.minor_axis_length > 0 and r.major_axis_length / r.minor_axis_length >= 3 and r.major_axis_length >= 60:   # >= 2.4 km long, thin
+            keep[lab == r.label] = True
+    return [c for c in find_contours(np.pad(keep, 1).astype(float), 0.5) if len(c) > 30]
+
 def chain_length(lines):
     return sum(np.hypot(*np.diff(l, axis=0).T).sum() for l in lines)
 
@@ -88,6 +102,11 @@ def trace_tile(npz):
         if comp.sum() >= MIN_LEN_PX: keep[sl] |= comp
     lines = [l for l in trace(keep) if len(l) >= 20]
     vs = valleys(sm, valid)
+    from skimage.draw import polygon as fillpoly
+    wide = np.zeros(sm.shape, bool)
+    for c in vs:
+        rr, cc = fillpoly(c[:, 0] - 1, c[:, 1] - 1, wide.shape); wide[rr, cc] = True
+    vs = vs + narrow_channels(sm, valid, wide)
     line_mask = np.zeros_like(keep)
     for l in lines: line_mask[l[:, 0], l[:, 1]] = True
     from skimage.draw import polygon as fillpoly

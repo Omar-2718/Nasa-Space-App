@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type Setup } from './api';
+import EarthdataConnect, { useEarthdata } from './Earthdata';
 import Tour from './pages/Tour';
 import LiveMap from './pages/LiveMap';
 import Planner from './pages/Planner';
@@ -17,6 +18,7 @@ const fromHash = () => PAGES.find(p => '#' + p.id === location.hash)?.id ?? 'tou
 export default function App() {
   const [page, setPage] = useState<string>(fromHash());
   const [setup, setSetup] = useState<Setup>();
+  const [ed, setEd] = useEarthdata();
   useEffect(() => { api.setup().then(setSetup).catch(() => {}); }, [page]);
   useEffect(() => {
     const on = () => setPage(fromHash());
@@ -33,11 +35,13 @@ export default function App() {
           ))}
         </nav>
       </header>
+      {page === 'tour' && ed && !ed.connected && ed.canEdit && (
+        <div className="banner"><EarthdataConnect status={ed} onChange={setEd} /></div>
+      )}
       {setup && setup.patchesInDb === 0 && page !== 'map' && (
         <div className="banner">
-          <b>No radar patches on this computer yet.</b>
-          <span>Open the <a href="#map">Live map</a> and use “Add radar for an area”, or unzip the team data pack into the project folder and run <code>./dev.sh</code> again.</span>
-          {!setup.earthdataLogin && <span className="no">Downloading needs a NASA Earthdata login in ~/.netrc (see README).</span>}
+          <b>No radar on this computer yet.</b>
+          <span>Open the <a href="#map">Live map</a> and use “Add radar for an area” to download it from NASA.</span>
         </div>
       )}
       <main>{PAGES.find(p => p.id === page)!.el}</main>

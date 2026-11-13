@@ -5,6 +5,7 @@ import { stream } from './live.js';
 import { tagging } from './routes/tagging.js';
 import { maps } from './routes/maps.js';
 import { areas } from './routes/areas.js';
+import { earthdata } from './routes/earthdata.js';
 
 const app = express();
 app.use(cors());
@@ -22,6 +23,7 @@ app.get('/api/stream', stream);
 app.use('/api', tagging);
 app.use('/api', maps);
 app.use('/api', areas);
+app.use('/api', earthdata);
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

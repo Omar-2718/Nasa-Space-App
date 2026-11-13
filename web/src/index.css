@@ -120,3 +120,20 @@ th { color: var(--muted); font-weight: 600; }
 .maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: #1d1813; }
 .maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: #1d1813; }
 .sitelabel.river { color: #ffd23f; font-weight: 700; }
+
+/* example squares: what a buried river looks like vs look-alikes */
+.examples h2 { margin: 4px 0 6px; font-size: 14px; }
+.exgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+.ex { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; color: var(--fg); cursor: pointer; font: inherit; }
+.ex img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; }
+.ex b { font-size: 11.5px; line-height: 1.2; }
+.ex span { font-size: 10.5px; opacity: .75; line-height: 1.25; }
+.ex.yes { border-color: #38d6ff; }
+.ex.yes b { color: #7fe3ff; }
+.ex.no b { color: #ff9d8a; }
+.ex:hover { filter: brightness(1.15); }
+
+/* NASA Earthdata login form */
+.edform { display: flex; flex-direction: column; gap: 6px; max-width: 340px; }
+.edform input { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; font: inherit; }
+.linkbtn { background: none; border: 0; color: var(--muted, #aaa); text-decoration: underline; cursor: pointer; margin-left: 8px; padding: 0; font: inherit; }
