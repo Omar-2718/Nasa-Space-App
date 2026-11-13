@@ -57,6 +57,7 @@ export default function Planner() {
           <a href={`/api/export/csv?ids=${ids}`}>CSV</a>
         </div>
         <p className="small muted">{picked.size} stops selected</p>
+        {cands.length === 0 && <p className="muted">No candidates yet. Add radar on the <a href="#map">Live map</a> and tag some patches first.</p>}
         <div className="cands">
           {cands.map((c, i) => (
             <div key={c.id} className={'cand' + (focus === c.id ? ' sel' : '')} onClick={() => setFocus(c.id)}>

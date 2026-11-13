@@ -1,38 +1,70 @@
-"""Build one north-up radar mosaic (HH, ~80 m) of every downloaded tile, for the live map's radar layer.
+"""Build the map layers for whatever radar this computer has: one north-up HH mosaic + traced channels.
 
-usage: make_mosaic.py        writes web_assets/mosaic_hh.png + web_assets/mosaic.json (corners)
-Re-run after adding tiles (add_area.py does this automatically). Uses the shared stretch from make_patches.
+usage: make_mosaic.py
+writes web_assets/mosaic_hh.png, web_assets/mosaic.json (corners, bounds, tour focus), web_assets/channels.geojson
+Re-run after adding tiles (add_area.py does this automatically). Works with 0..N tiles:
+with no tiles it removes the layers so the app shows its "add radar" state.
 """
-import glob, json, os, sys, numpy as np
+import json, os, sys, numpy as np
 from PIL import Image
 from rasterio.warp import reproject, Resampling, transform_bounds
 from rasterio.transform import from_origin
 sys.path.insert(0, os.path.dirname(__file__))
 from make_patches import all_tiles, compute_stretch, STRETCH
+from trace_channels import trace_tile, tile_features
 
-RES = 0.0008                                    # degrees, about 80 m: whole coverage stays a few MB
+MAX_PX = 8000                                   # cap the mosaic's longest side so big coverage stays light in the browser
+OUT = 'web_assets'
 
 def build():
+    os.makedirs(OUT, exist_ok=True)
     tiles = all_tiles()
-    if not tiles: print('no tiles'); return
+    if not tiles:
+        for f in ('mosaic_hh.png', 'mosaic.json', 'channels.geojson'):
+            if os.path.exists(f'{OUT}/{f}'): os.remove(f'{OUT}/{f}')
+        print('no tiles: map layers removed'); return
     st = json.load(open(STRETCH)) if os.path.exists(STRETCH) else compute_stretch(tiles)
-    meta = [(t, np.load(t)) for t in tiles]
-    bb = [transform_bounds(int(C['epsg']), 4326, C['x'][0], C['y'][-1], C['x'][-1], C['y'][0]) for _, C in meta]
+    bb = []
+    for t in tiles:
+        C = np.load(t); bb.append(transform_bounds(int(C['epsg']), 4326, C['x'][0], C['y'][-1], C['x'][-1], C['y'][0]))
     W, S, E, N = min(b[0] for b in bb), min(b[1] for b in bb), max(b[2] for b in bb), max(b[3] for b in bb)
-    w, h = int((E - W) / RES) + 1, int((N - S) / RES) + 1
-    dst_t = from_origin(W, N, RES, RES)
+    res = max(0.0004, (E - W) / MAX_PX, (N - S) / MAX_PX)        # ~40 m, coarser only for very large areas
+    w, h = int((E - W) / res) + 1, int((N - S) / res) + 1
+    dst_t = from_origin(W, N, res, res)
     mos = np.full((h, w), np.nan, np.float32)
-    for t, C in meta:
+    features = []
+    for t in tiles:
+        C = np.load(t)
         a = C['HH'].astype(np.float32); a[a <= 0] = np.nan
         tmp = np.full((h, w), np.nan, np.float32)
         reproject(a, tmp, src_transform=from_origin(C['x'][0] - 10, C['y'][0] + 10, 20, 20), src_crs=f"EPSG:{int(C['epsg'])}",
                   dst_transform=dst_t, dst_crs='EPSG:4326', resampling=Resampling.average, src_nodata=np.nan, dst_nodata=np.nan)
         mos = np.where(np.isnan(mos), tmp, mos)
+        features += tile_features(trace_tile(t))
+        print('layered', t, flush=True)
+    # close hairline seams between neighbouring tiles (they don't quite touch after reprojection):
+    # fill empty pixels within 3 px of data with the nearest value
+    from scipy import ndimage as ndi
+    empty = np.isnan(mos)
+    if empty.any() and (~empty).any():
+        dist, (ri, ci) = ndi.distance_transform_edt(empty, return_indices=True)
+        near = empty & (dist <= 3)
+        mos[near] = mos[ri[near], ci[near]]
     m = ~np.isnan(mos)
     g = (np.clip((10 * np.log10(np.clip(np.nan_to_num(mos), 1e-6, None)) - st['HL']) / (st['HH'] - st['HL']), 0, 1) * 255).astype(np.uint8)
-    Image.fromarray(np.dstack([g, g, g, np.where(m, 255, 0).astype(np.uint8)])).save('web_assets/mosaic_hh.png', optimize=True)
-    json.dump({'corners': [[W, N], [E, N], [E, S], [W, S]], 'tiles': len(tiles), 'size_px': [w, h]}, open('web_assets/mosaic.json', 'w'))
-    print(f'mosaic {w}x{h} px from {len(tiles)} tiles')
+    Image.fromarray(np.dstack([g, np.where(m, 255, 0).astype(np.uint8)]), 'LA').save(f'{OUT}/mosaic_hh.png', optimize=True)   # grey + alpha: half the size of RGBA
+    json.dump({'type': 'FeatureCollection', 'features': features}, open(f'{OUT}/channels.geojson', 'w'))
+    # tour focus: centre of the biggest traced valley, else of the densest channels, else the mosaic centre
+    focus = [(W + E) / 2, (S + N) / 2]
+    vals = [f for f in features if f['properties']['kind'] == 'valley']
+    if vals:
+        ring = np.array(max(vals, key=lambda f: f['properties']['area_px'])['geometry']['coordinates'][0]); focus = ring.mean(0).tolist()
+    elif features:
+        pts = np.array([c for f in features for c in f['geometry']['coordinates']]); focus = np.median(pts, 0).tolist()
+    km = sum(f['properties'].get('len_km', 0) for f in features)
+    json.dump({'corners': [[W, N], [E, N], [E, S], [W, S]], 'bounds': [[W, S], [E, N]], 'focus': [round(focus[0], 4), round(focus[1], 4)],
+               'tiles': len(tiles), 'size_px': [w, h], 'channels_km': round(km)}, open(f'{OUT}/mosaic.json', 'w'))
+    print(f'mosaic {w}x{h} px from {len(tiles)} tiles, {round(km)} km of traced channels, focus {focus}')
 
 if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))

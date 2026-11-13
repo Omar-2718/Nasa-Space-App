@@ -97,21 +97,27 @@ def trace_tile(npz):
     return dict(db=db, sm=sm, valid=valid, x=x, y=y, epsg=epsg, lines=lines, valleys=vs,
                 line_mask=line_mask, valley_mask=valley_mask)
 
+def tile_features(T):
+    """GeoJSON features (lon/lat) for one traced tile: channel lines + valley polygons."""
+    x, y, lines, vs = T['x'], T['y'], T['lines'], T['valleys']
+    tf = Transformer.from_crs(T['epsg'], 4326, always_xy=True); out = []
+    for l in lines:
+        s_ = approximate_polygon(l.astype(float), tolerance=2.0)
+        lon, lat = tf.transform(x[s_[:, 1].astype(int)], y[s_[:, 0].astype(int)])
+        out.append({'type': 'Feature', 'properties': {'kind': 'channel', 'len_km': round(float(np.hypot(*np.diff(l, axis=0).T).sum()) * 0.04, 2)},
+                    'geometry': {'type': 'LineString', 'coordinates': [[round(a, 5), round(b, 5)] for a, b in zip(lon, lat)]}})
+    for c in vs:
+        c = approximate_polygon(c - 1, tolerance=2.0); c = np.clip(c, 0, [len(y) - 1, len(x) - 1])
+        lon, lat = tf.transform(x[c[:, 1].astype(int)], y[c[:, 0].astype(int)])
+        out.append({'type': 'Feature', 'properties': {'kind': 'valley', 'area_px': int(len(c))}, 'geometry': {'type': 'Polygon', 'coordinates': [[[round(a, 5), round(b, 5)] for a, b in zip(lon, lat)]]}})
+    return out
+
 def main():
     features, dbg = [], []
     out, debug = sys.argv[1], sys.argv[2]
     for npz in sys.argv[3:]:
         T = trace_tile(npz); sm, valid, x, y, epsg, lines, vs = T['sm'], T['valid'], T['x'], T['y'], T['epsg'], T['lines'], T['valleys']
-        tf = Transformer.from_crs(epsg, 4326, always_xy=True)
-        for l in lines:
-            s_ = approximate_polygon(l.astype(float), tolerance=2.0)
-            lon, lat = tf.transform(x[s_[:, 1].astype(int)], y[s_[:, 0].astype(int)])
-            features.append({'type': 'Feature', 'properties': {'kind': 'channel', 'len_km': round(float(np.hypot(*np.diff(l, axis=0).T).sum()) * 0.04, 2)},
-                             'geometry': {'type': 'LineString', 'coordinates': [[round(a, 5), round(b, 5)] for a, b in zip(lon, lat)]}})
-        for c in vs:
-            c = approximate_polygon(c - 1, tolerance=2.0); c = np.clip(c, 0, [len(y) - 1, len(x) - 1])
-            lon, lat = tf.transform(x[c[:, 1].astype(int)], y[c[:, 0].astype(int)])
-            features.append({'type': 'Feature', 'properties': {'kind': 'valley'}, 'geometry': {'type': 'Polygon', 'coordinates': [[[round(a, 5), round(b, 5)] for a, b in zip(lon, lat)]]}})
+        features += tile_features(T)
         dbg.append((npz, sm, valid, lines, vs))
         print(npz, 'lines', len(lines), 'total km', round(chain_length(lines) * 0.04, 1))
     json.dump({'type': 'FeatureCollection', 'features': features}, open(out, 'w'))

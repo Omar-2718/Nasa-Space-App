@@ -16,12 +16,12 @@ export default function OpenData() {
         <p>Researchers trying to map buried rivers with AI say the bottleneck is labelled data. Every tag here becomes part of an open dataset (CC-BY 4.0): radar patches, crowd labels weighted by tagger reliability, and model predictions.</p>
         <div className="dl">
           <a href="/api/dataset.geojson">Labels + scores (GeoJSON)</a>
-          <a href="/patches/index.json">Patch index (JSON)</a>
+          <a href="/layers/patches/index.json">Patch index (JSON)</a>
           <a href="/api/export/csv?limit=100">Top 100 candidates (CSV)</a>
         </div>
         <div className="stats" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
           <div className="stat"><b>{stats?.patches ?? '–'}</b><span>radar patches (5 × 5 km)</span></div>
-          <div className="stat"><b>12,085 km²</b><span>area covered</span></div>
+          <div className="stat"><b>{stats ? Math.round(stats.patches * 5.12 * 5.12).toLocaleString() : '–'} km²</b><span>area covered</span></div>
           <div className="stat"><b>{stats?.tags ?? '–'}</b><span>crowd tags</span></div>
           <div className="stat"><b>{stats?.gold ?? '–'}</b><span>expert gold labels</span></div>
         </div>
@@ -43,7 +43,7 @@ export default function OpenData() {
 
         <h2>Pipeline</h2>
         <table><tbody>
-          <tr><th>1. Data</th><td>NISAR L2 GCOV (provisional), track 079 descending, 17 Oct 2026, HH + HV at 20 m. Streamed from NASA ASF DAAC as crops (about 23 MB per 40 km tile instead of 1.6 GB).</td></tr>
+          <tr><th>1. Data</th><td>NISAR L2 GCOV (provisional), track 079 descending, 17 Oct 2026, HH + HV at 20 m. Streamed from NASA ASF DAAC as small crops instead of the whole 1.6 GB file.</td></tr>
           <tr><th>2. Tracer</th><td>dB conversion, speckle filter, background removal, Sato ridge filter for dark winding lines, rough-rock mask, skeleton. Wide valleys from km-scale dark elongated regions.</td></tr>
           <tr><th>3. Patches</th><td>Fixed UTM grid, 256 × 256 px (5.12 km), deduplicated across tiles.</td></tr>
           <tr><th>4. Crowd + trust</th><td>Tags weighted by tagger reliability; consensus per patch in PostGIS.</td></tr>

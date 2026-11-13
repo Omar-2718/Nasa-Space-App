@@ -38,7 +38,7 @@ export default function App() {
       {setup && setup.patchesInDb === 0 && page !== 'map' && (
         <div className="banner">
           <b>No radar patches on this computer yet.</b>
-          <span>Open the <a href="#map">Live map</a> and use “Add radar for an area” (downloads about 25 MB per area), or unzip the team data pack into the project folder and run <code>./dev.sh</code> again.</span>
+          <span>Open the <a href="#map">Live map</a> and use “Add radar for an area”, or unzip the team data pack into the project folder and run <code>./dev.sh</code> again.</span>
           {!setup.earthdataLogin && <span className="no">Downloading needs a NASA Earthdata login in ~/.netrc (see README).</span>}
         </div>
       )}

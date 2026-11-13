@@ -14,7 +14,7 @@ from PIL import Image
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--epochs', type=int, default=15)
-ap.add_argument('--holdout', default='t_30.91_22.97')
+ap.add_argument('--holdout', default='auto', help="tile to hold out, or 'auto' (the tile with the most patches after the largest)")
 ap.add_argument('--no-db', action='store_true')
 ap.add_argument('--score-only', action='store_true', help='skip training, rescore with ml/models/unet.pt')
 args = ap.parse_args()
@@ -25,7 +25,10 @@ DB_URL = os.environ.get('DATABASE_URL', 'postgresql://sand:sand@localhost:5433/b
 
 # ---------- data ----------
 index = {p['id']: p for p in json.load(open('web_assets/patches/index.json'))}
-ids = sorted(index)
+ids = sorted(p for p in index if os.path.exists(f'data/patches/{p}.npz'))   # only patches this computer has
+if len(ids) < 8 and not args.score_only:
+    raise SystemExit(f'only {len(ids)} patches on this computer: add radar areas in the app (Live map) or unzip the data pack first')
+if not ids: raise SystemExit('no patches to score')
 X = np.zeros((len(ids), 3, 256, 256), np.float32); Y = np.zeros((len(ids), 2, 256, 256), np.float32)   # [channel lines, wide valleys]
 from scipy import ndimage as ndi
 for i, pid in enumerate(ids):
@@ -64,9 +67,16 @@ for i, pid in enumerate(ids):
 print(f'modern (negative) patches: {sum(p in modern for p in ids)}')
 
 tiles = np.array([index[p]['tile'] for p in ids])
-val = tiles == args.holdout
+# hold out one whole tile (true unseen desert); with a single tile, hold out a random 15% of patches instead
+uniq, counts = np.unique(tiles, return_counts=True)
+if args.holdout == 'auto':
+    args.holdout = uniq[np.argsort(-counts)[1]] if len(uniq) > 1 else 'random 15%'
+if args.holdout in uniq:
+    val = tiles == args.holdout
+else:
+    val = np.zeros(len(ids), bool); val[np.random.choice(len(ids), max(1, len(ids) * 15 // 100), replace=False)] = True
 tr_idx, va_idx = np.where(~val)[0], np.where(val)[0]
-print(f'{dev} | train {len(tr_idx)} patches, held-out tile {args.holdout}: {len(va_idx)} patches')
+print(f'{dev} | train {len(tr_idx)} patches, held out ({args.holdout}): {len(va_idx)} patches')
 
 def batches(idx, bs, aug):
     idx = np.random.permutation(idx) if aug else idx
@@ -133,6 +143,12 @@ agree = [(scores[p] >= 0.5) == (c[1] >= 0.5) for p, c in crowd.items() if c[1] i
 metrics = {'held_out_tile': args.holdout, 'held_out_iou_vs_tracer': round(evaluate(va_idx), 3), 'train_iou_vs_tracer': round(evaluate(tr_idx), 3), 'epochs': args.epochs if not args.score_only else 'rescored',
            'train_patches': int(len(tr_idx)), 'crowd_patches': len(agree), 'crowd_agreement': round(float(np.mean(agree)), 3) if agree else None,
            'patches_flagged_by_ai': int(sum(v >= 0.5 for v in scores.values())), 'trained_at': time.strftime('%Y-%m-%d %H:%M')}
+if args.score_only and os.path.exists('ml/metrics.json'):
+    # held-out numbers belong to the training run; a rescore only updates coverage and the flag count
+    prev = json.load(open('ml/metrics.json'))
+    metrics = {**prev, 'patches_flagged_by_ai': metrics['patches_flagged_by_ai'], 'crowd_patches': metrics['crowd_patches'],
+               'crowd_agreement': metrics['crowd_agreement'], 'scored_patches': len(ids), 'rescored_at': time.strftime('%Y-%m-%d %H:%M')}
+metrics = {k: (v.item() if hasattr(v, 'item') else str(v) if isinstance(v, np.str_) else v) for k, v in metrics.items()}
 json.dump(metrics, open('ml/metrics.json', 'w'), indent=1)
 print(metrics)
 

@@ -14,3 +14,7 @@ export const patchImages = (id: string) => ({
   tracer: `/patches/${id}_tracer.png`,
   ai: `/patches/${id}_ai.png`,
 });
+
+// Where generated patches and map layers live (override with ASSETS_DIR, e.g. to simulate an empty computer).
+import { fileURLToPath } from 'node:url';
+export const ASSETS = process.env.ASSETS_DIR ?? fileURLToPath(new URL('../../web_assets/', import.meta.url));

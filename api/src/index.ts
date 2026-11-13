@@ -1,20 +1,18 @@
 import express from 'express';
 import cors from 'cors';
-import { fileURLToPath } from 'node:url';
-import { prisma } from './db.js';
+import { prisma, ASSETS } from './db.js';
 import { stream } from './live.js';
 import { tagging } from './routes/tagging.js';
 import { maps } from './routes/maps.js';
 import { areas } from './routes/areas.js';
 
-const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '100kb' }));
 
 // patch images and other generated assets
-app.use('/patches', express.static(ROOT + 'web_assets/patches', { maxAge: '1h' }));
-app.use('/assets', express.static(ROOT + 'web_assets', { maxAge: 0 }));
+app.use('/patches', express.static(ASSETS + '/patches', { maxAge: '1h' }));
+app.use('/layers', express.static(ASSETS, { maxAge: 0 }));   // mosaic, channels, index (whatever this PC has)
 
 app.get('/api/health', async (_req, res) => {
   try { await prisma.$queryRaw`SELECT 1`; res.json({ ok: true, db: true }); }

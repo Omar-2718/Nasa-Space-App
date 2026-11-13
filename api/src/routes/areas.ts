@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { prisma } from '../db.js';
+import { prisma, ASSETS } from '../db.js';
 import { broadcast } from '../live.js';
 
 export const areas = Router();
@@ -20,7 +20,7 @@ areas.get('/setup', async (_req, res) => {
   const patchesInDb = await prisma.patch.count();
   res.json({
     patchesInDb,
-    patchFilesOnDisk: existsSync(ROOT + 'web_assets/patches/index.json'),
+    patchFilesOnDisk: existsSync(ASSETS + '/patches/index.json'),
     earthdataLogin: existsSync(homedir() + '/.netrc'),
     python: existsSync(PY),
     job,
@@ -31,13 +31,14 @@ areas.get('/areas/job', (_req, res) => res.json(job));
 
 areas.post('/areas', (req, res) => {
   const lon = Number(req.body?.lon), lat = Number(req.body?.lat);
+  const sizeKm = Math.min(80, Math.max(12, Number(req.body?.sizeKm ?? 40)));   // side of the square; ~25 MB at 40 km
   if (!Number.isFinite(lon) || !Number.isFinite(lat) || Math.abs(lat) > 85) return res.status(400).json({ error: 'lon and lat are required' });
   if (job?.state === 'running') return res.status(409).json({ error: 'Another area is downloading. Wait for it to finish.', job });
   if (!existsSync(PY)) return res.status(500).json({ error: 'Python environment not found (.venv). See README.' });
 
   job = { lon, lat, step: 'Starting', pct: 1, state: 'running', started: Date.now() };
   broadcast('area', job);
-  const p = spawn(PY, ['-W', 'ignore', 'pipeline/add_area.py', String(lon), String(lat)], { cwd: ROOT, env: process.env });
+  const p = spawn(PY, ['-W', 'ignore', 'pipeline/add_area.py', String(lon), String(lat), '--half-km', String(sizeKm / 2)], { cwd: ROOT, env: process.env });
   let buf = '';
   p.stdout.on('data', chunk => {
     buf += chunk; const lines = buf.split('\n'); buf = lines.pop() ?? '';

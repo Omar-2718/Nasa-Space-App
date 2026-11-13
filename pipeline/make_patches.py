@@ -86,6 +86,7 @@ if __name__ == '__main__':
         new = add_tiles(sys.argv[1:], print); print(f'added {len(new)} patches')
     else:
         tiles = all_tiles()
+        if not tiles: sys.exit('no radar tiles in data/: download some with pipeline/add_area.py <lon> <lat> or the app')
         os.makedirs(NPZ_DIR, exist_ok=True); os.makedirs(WEB_DIR, exist_ok=True)
         st = compute_stretch(tiles); done, index = set(), []
         for t in tiles:

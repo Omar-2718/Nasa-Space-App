@@ -33,7 +33,8 @@ export default function Tag() {
   const shownAt = useRef(0);
   const photo = useRef<maplibregl.Map | null>(null);
 
-  useEffect(() => { sessionId().then(setSession); api.stats().then(s => setGoldCount(s.gold)); }, []);
+  const [total, setTotal] = useState<number | null>(null);
+  useEffect(() => { sessionId().then(setSession); api.stats().then(s => { setGoldCount(s.gold); setTotal(s.patches); }); }, []);
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -105,7 +106,8 @@ export default function Tag() {
         {admin && <input placeholder="Admin key" value={adminKey} onChange={e => setAdminKey(e.target.value)} style={{ padding: 8, borderRadius: 6, border: '1px solid var(--line)', background: 'var(--bg)', color: 'var(--fg)', maxWidth: 260 }} />}
         {phase === 'quiz' && <div className="progress"><i style={{ width: `${count / QUIZ_LEN * 100}%` }} /></div>}
 
-        {done ? <div className="card"><h2>You've seen every patch. Thank you!</h2><p className="muted">See what everyone found on the <a href="#map">live map</a>.</p></div> : (
+        {total === 0 ? <div className="card"><h2>No radar patches on this computer yet</h2><p className="muted">Add an area on the <a href="#map">Live map</a>, or unzip the team data pack and restart.</p></div>
+        : done ? <div className="card"><h2>You've seen every patch. Thank you!</h2><p className="muted">See what everyone found on the <a href="#map">live map</a>.</p></div> : (
           <>
             <div className="pair">
               <div className="tile">
@@ -165,7 +167,7 @@ function Guide({ goldReady, onStart }: { goldReady: boolean; onStart: (quiz: boo
           <div className="examples">
             {EXAMPLES.map(e => (
               <figure key={e.id} className={e.ok ? 'yes' : 'no'}>
-                <img src={`/patches/${e.id}_radar.png`} alt={e.t} />
+                <img src={`/patches/${e.id}_radar.png`} alt={e.t} onError={ev => { (ev.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }} />
                 <figcaption><b className={e.ok ? 'ok' : 'no'}>{e.ok ? '✓ ' : '✗ '}{e.t}</b>{e.d}</figcaption>
               </figure>
             ))}

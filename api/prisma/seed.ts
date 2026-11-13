@@ -5,6 +5,7 @@ import { readFileSync, existsSync } from 'node:fs';
 
 const prisma = new PrismaClient();
 const ROOT = new URL('../../', import.meta.url).pathname;
+const ASSETS = process.env.ASSETS_DIR ?? ROOT + 'web_assets';
 
 type IndexRec = { id: string; tile: string; corners: number[][]; center: number[]; tracer_line_frac: number; tracer_valley_frac: number };
 
@@ -23,11 +24,11 @@ const SITES = [
 ];
 
 async function main() {
-  const idxPath = ROOT + 'web_assets/patches/index.json';
+  const idxPath = ASSETS + '/patches/index.json';
   // A fresh computer has no patch files yet: seed the sites, then add coverage from the app ("Add radar for an area").
   const idx: IndexRec[] = existsSync(idxPath) ? JSON.parse(readFileSync(idxPath, 'utf8')) : [];
   if (!idx.length) console.log('no patch files on this computer yet: use "Add radar for an area" in the app, or unzip the team data pack');
-  const aiPath = ROOT + 'web_assets/ai_scores.json';
+  const aiPath = ASSETS + '/ai_scores.json';
   const ai: Record<string, number> = existsSync(aiPath) ? JSON.parse(readFileSync(aiPath, 'utf8')) : {};
   for (const p of idx) {
     const ring = [...p.corners, p.corners[0]];

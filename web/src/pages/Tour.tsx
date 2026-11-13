@@ -3,17 +3,17 @@ import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import { SAT_STYLE } from '../api';
 
-type Cam = 'all' | { center: [number, number]; zoom: number };
+type Cam = 'all' | { zoom: number };      // zoomed steps centre on the data's focus point (biggest traced valley)
 type Step = { title: string; text: string; pos: number; rivers: boolean | 'pulse'; cam: Cam; sweep?: number[] };
 
 const STEPS: Step[] = [
   { title: 'An empty desert?', pos: 100, rivers: false, cam: 'all',
-    text: 'The Egypt–Sudan border near Bir Safsaf, one of the driest places on Earth. From space it looks like sand in every direction.' },
+    text: 'The Eastern Sahara near the Egypt–Sudan border, one of the driest places on Earth. From space it looks like sand in every direction.' },
   { title: 'Now look with radar', pos: 0, rivers: false, cam: 'all',
     text: "NISAR sends 24 cm radio waves. Dry sand is almost transparent to them, so they reach the rock and gravel 1–2 m below and bounce back. The hidden landscape appears." },
-  { title: 'Rivers under the sand', pos: 0, rivers: 'pulse', cam: { center: [29.3, 22.66], zoom: 10.2 },
+  { title: 'Rivers under the sand', pos: 0, rivers: 'pulse', cam: { zoom: 10.2 },
     text: 'The shaded band is a buried river valley, kilometres wide; the lines are smaller channels feeding it. They flowed when the Sahara was green.' },
-  { title: 'Invisible to the eye', pos: 50, rivers: true, sweep: [30, 72, 45], cam: { center: [29.33, 22.66], zoom: 10.8 },
+  { title: 'Invisible to the eye', pos: 50, rivers: true, sweep: [30, 72, 45], cam: { zoom: 10.8 },
     text: 'Watch the line move, then drag it yourself. Where the radar shows rivers, the photo shows only sand.' },
   { title: 'People lived here', pos: 50, rivers: true, cam: 'all',
     text: 'In the 1980s field teams dug into these radar channels and found stone hand-axes hundreds of thousands of years old. The Sahara is 9 million km² and nobody can walk all of it. Help us map where to look.' },
@@ -23,7 +23,7 @@ const FULL: Record<string, [string, number]> = { valleys: ['fill-opacity', 0.22]
 
 export default function Tour() {
   const wrap = useRef<HTMLDivElement>(null);
-  const maps = useRef<{ a?: maplibregl.Map; b?: maplibregl.Map; bounds?: maplibregl.LngLatBoundsLike }>({});
+  const maps = useRef<{ a?: maplibregl.Map; b?: maplibregl.Map; bounds?: maplibregl.LngLatBoundsLike; focus?: [number, number] }>({});
   const run = useRef(0);
   const [step, setStep] = useState(0);
   const [ready, setReady] = useState(false);
@@ -55,13 +55,13 @@ export default function Tour() {
     let n = 0;
     const onLoad = async () => {
       if (++n < 2) return;
-      const r = await fetch('/tour/manifest.json');
-      if (!r.ok || !(r.headers.get('content-type') ?? '').includes('json')) { setMissing(true); return; }
+      const r = await fetch('/layers/mosaic.json').catch(() => null);
+      if (!r?.ok || !(r.headers.get('content-type') ?? '').includes('json')) { setMissing(true); return; }
       const M = await r.json();
-      const c = M.radar.corners; maps.current.bounds = [c[3], c[1]];
-      b.addSource('radar', { type: 'image', url: '/tour/radar_hh.png', coordinates: c });
+      maps.current.bounds = M.bounds; maps.current.focus = M.focus;
+      b.addSource('radar', { type: 'image', url: `/layers/mosaic_hh.png?t=${Date.now()}`, coordinates: M.corners });
       b.addLayer({ id: 'radar', type: 'raster', source: 'radar', paint: { 'raster-fade-duration': 0 } });
-      b.addSource('rivers', { type: 'geojson', data: '/tour/channels.geojson' });
+      b.addSource('rivers', { type: 'geojson', data: '/layers/channels.geojson' });
       b.addLayer({ id: 'valleys', type: 'fill', source: 'rivers', filter: ['==', ['get', 'kind'], 'valley'], paint: { 'fill-color': '#2fd3ff', 'fill-opacity': 0 } });
       b.addLayer({ id: 'rivers-glow', type: 'line', source: 'rivers', filter: ['==', ['get', 'kind'], 'channel'], layout: { 'line-cap': 'round' },
         paint: { 'line-color': '#2fd3ff', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4, 13, 14], 'line-blur': 6, 'line-opacity': 0 } });
@@ -86,7 +86,7 @@ export default function Tour() {
     const s = STEPS[step], id = ++run.current, b = maps.current.b!;
     const wait = (ms: number) => new Promise<void>((res, rej) => setTimeout(() => (id === run.current ? res() : rej()), ms));
     setPos(s.pos);
-    if (s.cam === 'all') b.fitBounds(maps.current.bounds!, { padding: 30, duration: 1600 }); else b.flyTo({ ...s.cam, duration: 1800 });
+    if (s.cam === 'all') b.fitBounds(maps.current.bounds!, { padding: 30, duration: 1600 }); else b.flyTo({ center: maps.current.focus!, zoom: s.cam.zoom, duration: 1800 });
     setHighlight(s.rivers === true ? 1 : 0, s.rivers === 'pulse' ? 300 : 900);
     (async () => {
       await wait(1900);
@@ -109,7 +109,7 @@ export default function Tour() {
             : <a href="#tag"><button className="primary">Start tagging</button></a>}
         </div>
         <div className="dots">{STEPS.map((_, k) => <i key={k} className={k === step ? 'on' : ''} />)}</div>
-        {missing && <p className="no small">Tour images are missing on this computer. Unzip the team data pack, or run <code>pipeline/export_app_data.py</code>.</p>}
+        {missing && <p className="no small">No radar on this computer yet. Add an area on the <a href="#map">Live map</a>, or unzip the team data pack.</p>}
         <p className="muted small">NISAR L2 GCOV, 17 Oct 2026, NASA/ISRO via ASF DAAC. Lines are traced automatically and are candidates, not confirmed rivers.</p>
       </aside>
       <div className="mapwrap" ref={wrap}>

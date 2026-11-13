@@ -18,7 +18,7 @@ def say(step, pct, **kw):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('lon', type=float); ap.add_argument('lat', type=float)
     ap.add_argument('--half-km', type=float, default=20); a = ap.parse_args()
-    name = f't_{a.lon:.2f}_{a.lat:.2f}'; out = f'data/tiles/{name}'
+    name = f't_{a.lon:.2f}_{a.lat:.2f}' + ('' if a.half_km == 20 else f'_{int(a.half_km * 2)}km'); out = f'data/tiles/{name}'
     os.makedirs(out, exist_ok=True)
 
     if not os.path.exists(os.path.expanduser('~/.netrc')):
@@ -43,7 +43,7 @@ def main():
         X, Y = Transformer.from_crs(4326, epsg, always_xy=True).transform(a.lon, a.lat)
         h = a.half_km * 1000
         ix = np.where((x > X - h) & (x < X + h))[0]; iy = np.where((y > Y - h) & (y < Y + h))[0]
-        if len(ix) < 300 or len(iy) < 300: say('error', 0, message='That spot is at the edge of the radar frame. Try a bit further inside.'); sys.exit(1)
+        if len(ix) < min(300, a.half_km * 75) or len(iy) < min(300, a.half_km * 75): say('error', 0, message='That spot is at the edge of the radar frame. Try a bit further inside.'); sys.exit(1)
         sl = (slice(iy[0], iy[-1] + 1), slice(ix[0], ix[-1] + 1))
         say('Downloading radar crop: HH', 30)
         HH = g['HHHH'][sl]

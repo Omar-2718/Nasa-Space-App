@@ -4,7 +4,7 @@ export type Images = { radar: string; rgb: string; tracer: string; ai: string };
 export type Patch = { id: string; geometry: GeoJSON.Polygon; center: [number, number]; images: Images };
 export type Reveal = { ai: number | null; tracer: number; crowd: { votes: number; channelShare: number | null }; gold: { label: Label; correct: boolean } | null };
 export type Candidate = { id: string; lon: number; lat: number; score: number; votes: number; crowd: number | null; ai: number; nearestSite: string | null; distKm: number | null; why: string[]; images: Images };
-export type AreaJob = { lon: number; lat: number; step: string; pct: number; state: 'running' | 'done' | 'error'; message?: string; added?: number };
+export type AreaJob = { lon: number; lat: number; sizeKm?: number; step: string; pct: number; state: 'running' | 'done' | 'error'; message?: string; added?: number };
 export type Setup = { patchesInDb: number; patchFilesOnDisk: boolean; earthdataLogin: boolean; python: boolean; job: AreaJob | null };
 export type Stats = { patches: number; tags: number; people: number; tagged: number; flagged: number; gold: number };
 
@@ -36,19 +36,34 @@ export const api = {
   stats: () => j<Stats>('/api/stats'),
   metrics: () => j<Record<string, unknown>>('/api/metrics'),
   setup: () => j<Setup>('/api/setup'),
-  addArea: (lon: number, lat: number) => j<AreaJob>('/api/areas', { method: 'POST', body: JSON.stringify({ lon, lat }) }),
+  addArea: (lon: number, lat: number, sizeKm: number) => j<AreaJob>('/api/areas', { method: 'POST', body: JSON.stringify({ lon, lat, sizeKm }) }),
 };
 
+// Basemaps. Default: Sentinel-2 cloudless 2020 (EOX), one consistent year everywhere, so lakes and fields don't
+// change as you zoom. Esri World Imagery is sharper but mixes photos from many years (Toshka lakes appear and vanish).
 export const SAT_STYLE: maplibregl.StyleSpecification = {
   version: 8,
   sources: {
-    sat: {
+    s2: {
+      type: 'raster', tileSize: 256, maxzoom: 14,
+      tiles: ['https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg'],
+      attribution: 'Sentinel-2 cloudless 2020 by EOX (CC BY-NC-SA 4.0, contains modified Copernicus Sentinel data)',
+    },
+    esri: {
       type: 'raster', tileSize: 256, maxzoom: 18,
       tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
       attribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
     },
   },
-  layers: [{ id: 'sat', type: 'raster', source: 'sat' }],
+  layers: [
+    { id: 'esri', type: 'raster', source: 'esri', layout: { visibility: 'none' } },
+    { id: 's2', type: 'raster', source: 's2' },
+  ],
 };
+export type Basemap = 's2' | 'esri';
+export function setBasemap(m: maplibregl.Map, b: Basemap) {
+  m.setLayoutProperty('s2', 'visibility', b === 's2' ? 'visible' : 'none');
+  m.setLayoutProperty('esri', 'visibility', b === 'esri' ? 'visible' : 'none');
+}
 
 export const pct = (v: number | null | undefined) => (v === null || v === undefined ? '–' : `${Math.round(v * 100)}%`);

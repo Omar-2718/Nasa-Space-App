@@ -21,3 +21,4 @@ beneath-data.zip
 notebooks/sample_small/
 notebooks/*_small_sample.ipynb
 ml/metrics.json
+share/

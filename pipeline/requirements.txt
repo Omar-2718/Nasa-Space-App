@@ -1,0 +1,11 @@
+# pipeline + trust model (light). The AI model's extra packages are in ml/requirements.txt (PyTorch, ~2.5 GB).
+earthaccess
+h5py
+numpy
+scipy
+scikit-image
+pyproj
+rasterio
+pillow
+matplotlib
+psycopg[binary]

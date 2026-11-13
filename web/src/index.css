@@ -110,4 +110,3 @@ th { color: var(--muted); font-weight: 600; }
 .addcard { border: 1px solid var(--accent); }
 .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; } .bar i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
 .picking .maplibregl-canvas { cursor: crosshair; }
-.pickbox { width: 120px; height: 120px; border: 2px dashed var(--accent); border-radius: 4px; background: #e58a4b22; pointer-events: none; }
