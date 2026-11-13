@@ -16,6 +16,14 @@ from trace_channels import trace_tile, tile_features
 MAX_PX = 8000                                   # cap the mosaic's longest side so big coverage stays light in the browser
 OUT = 'web_assets'
 
+def cached_features(t):
+    """Traced channels for one tile, cached next to it (tracing is the slow part; only new tiles get traced)."""
+    cache = os.path.join(os.path.dirname(t), 'traced_features.json')
+    if os.path.exists(cache) and os.path.getmtime(cache) >= os.path.getmtime(t):
+        f = json.load(open(cache))
+        if isinstance(f, list): return f
+    f = tile_features(trace_tile(t)); json.dump(f, open(cache, 'w')); return f
+
 def build():
     os.makedirs(OUT, exist_ok=True)
     tiles = all_tiles()
@@ -40,7 +48,7 @@ def build():
         reproject(a, tmp, src_transform=from_origin(C['x'][0] - 10, C['y'][0] + 10, 20, 20), src_crs=f"EPSG:{int(C['epsg'])}",
                   dst_transform=dst_t, dst_crs='EPSG:4326', resampling=Resampling.average, src_nodata=np.nan, dst_nodata=np.nan)
         mos = np.where(np.isnan(mos), tmp, mos)
-        features += tile_features(trace_tile(t))
+        features += cached_features(t)
         print('layered', t, flush=True)
     # close hairline seams between neighbouring tiles (they don't quite touch after reprojection):
     # fill empty pixels within 3 px of data with the nearest value
@@ -50,9 +58,18 @@ def build():
         dist, (ri, ci) = ndi.distance_transform_edt(empty, return_indices=True)
         near = empty & (dist <= 3)
         mos[near] = mos[ri[near], ci[near]]
+    # show radar only inside patch squares, so the map shows exactly what can be tagged
+    # (crops extend past the last complete grid cell; those edge strips have no patch)
+    idx_path = 'web_assets/patches/index.json'
+    if os.path.exists(idx_path):
+        from rasterio.features import rasterize
+        polys = [{'type': 'Polygon', 'coordinates': [p['corners'] + [p['corners'][0]]]} for p in json.load(open(idx_path))]
+        if polys:
+            inside = rasterize(((g_, 1) for g_ in polys), out_shape=mos.shape, transform=dst_t, fill=0, dtype='uint8', all_touched=True).astype(bool)
+            mos[~inside] = np.nan
     m = ~np.isnan(mos)
     g = (np.clip((10 * np.log10(np.clip(np.nan_to_num(mos), 1e-6, None)) - st['HL']) / (st['HH'] - st['HL']), 0, 1) * 255).astype(np.uint8)
-    Image.fromarray(np.dstack([g, np.where(m, 255, 0).astype(np.uint8)]), 'LA').save(f'{OUT}/mosaic_hh.png', optimize=True)   # grey + alpha: half the size of RGBA
+    Image.fromarray(np.dstack([g, np.where(m, 255, 0).astype(np.uint8)]), 'LA').save(f'{OUT}/mosaic_hh.png', compress_level=3)   # grey + alpha: half the size of RGBA
     json.dump({'type': 'FeatureCollection', 'features': features}, open(f'{OUT}/channels.geojson', 'w'))
     # tour focus: centre of the biggest traced valley, else of the densest channels, else the mosaic centre
     focus = [(W + E) / 2, (S + N) / 2]

@@ -14,61 +14,92 @@ const LAYERS = [
 export default function LiveMap() {
   const map = useRef<maplibregl.Map | null>(null);
   const labels = useRef<maplibregl.Marker[]>([]);
+  const patchesRef = useRef<GeoJSON.FeatureCollection | null>(null);
+  const hiRes = useRef<Set<string>>(new Set());
+  const radarOn = useRef(true);
+  // Two radar levels: the ~40 m overview mosaic everywhere, and from zoom 11 the full 20 m patch images
+  // for the squares on screen (each image is pinned to its exact patch corners, so it lines up with the grid).
+  const HIRES_ZOOM = 11, MAX_HIRES = 80;
+  const updateHiRes = () => {
+    const m = map.current, fc = patchesRef.current; if (!m || !fc || !m.getLayer('ai')) return;
+    const want = new Set<string>();
+    if (radarOn.current && m.getZoom() >= HIRES_ZOOM) {
+      const b = m.getBounds();
+      for (const f of fc.features) {
+        const ring = (f.geometry as GeoJSON.Polygon).coordinates[0];
+        const xs = ring.map(c => c[0]), ys = ring.map(c => c[1]);   // patch bbox overlaps the view
+        if (Math.max(...xs) >= b.getWest() && Math.min(...xs) <= b.getEast() && Math.max(...ys) >= b.getSouth() && Math.min(...ys) <= b.getNorth()) want.add(String(f.properties?.id));
+        if (want.size >= MAX_HIRES) break;
+      }
+    }
+    for (const id of hiRes.current) if (!want.has(id)) { m.removeLayer('hr_' + id); m.removeSource('hr_' + id); hiRes.current.delete(id); }
+    for (const f of fc.features) {
+      const id = String(f.properties?.id);
+      if (!want.has(id) || hiRes.current.has(id)) continue;
+      const r = (f.geometry as GeoJSON.Polygon).coordinates[0];
+      m.addSource('hr_' + id, { type: 'image', url: `/patches/${id}_radar.png`, coordinates: [r[0], r[1], r[2], r[3]] as [[number, number], [number, number], [number, number], [number, number]] });
+      m.addLayer({ id: 'hr_' + id, type: 'raster', source: 'hr_' + id, paint: { 'raster-fade-duration': 150 } }, 'ai');
+      hiRes.current.add(id);
+    }
+  };
   const [stats, setStats] = useState<Stats>();
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [on, setOn] = useState<Record<string, boolean>>({ crowd: true, ai: false, radar: true, sites: true });
   const [sel, setSel] = useState<Record<string, unknown> | null>(null);
   const [base, setBase] = useState<Basemap>('s2');
-  // download size presets as square blocks of 5.12 km patches (+ a small margin so edge patches are complete)
-  const SIZES = [3, 5, 7, 10].map(n => ({ n, km: Math.round(n * 5.12 + 2) }));
-  const [sizeKm, setSizeKm] = useState(SIZES[1].km);
-  const sizeRef = useRef(SIZES[1].km);
-  useEffect(() => { sizeRef.current = sizeKm; }, [sizeKm]);
   useEffect(() => { const m = map.current; if (m?.getLayer('s2')) setBasemap(m, base); }, [base]);
-  // on-demand coverage: pick a spot -> confirm -> download progress
+  // on-demand coverage: choose a size (n x n patches on the real patch grid), click, review, download only missing cells
+  const SIZES = [1, 3, 5, 7, 10];
+  const [n, setN] = useState(1);
+  const nRef = useRef(1);
+  useEffect(() => { nRef.current = n; }, [n]);
   const [picking, setPicking] = useState(false);
   const pickingRef = useRef(false);
-  const [pick, setPick] = useState<{ lon: number; lat: number } | null>(null);
-  // the exact 40 x 40 km square add_area.py will download, drawn as a map polygon so it scales with zoom
-  const showPick = (p: { lon: number; lat: number } | null, side = sizeRef.current) => {
-    const m = map.current;
-    try { if (!m || !m.getLayer('outline')) return; } catch { return; }   // map not ready yet, or already removed
-    const half = side / 2, dLat = half / 110.574, dLon = half / (111.32 * Math.cos(((p?.lat ?? 0) * Math.PI) / 180));
-    const data: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: p ? [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon',
-      coordinates: [[[p.lon - dLon, p.lat - dLat], [p.lon + dLon, p.lat - dLat], [p.lon + dLon, p.lat + dLat], [p.lon - dLon, p.lat + dLat], [p.lon - dLon, p.lat - dLat]]] } }] : [] };
-    const src = m.getSource('pick') as maplibregl.GeoJSONSource | undefined;
-    if (src) src.setData(data);
-    else {
-      m.addSource('pick', { type: 'geojson', data });
-      m.addLayer({ id: 'pick-fill', type: 'fill', source: 'pick', paint: { 'fill-color': '#e58a4b', 'fill-opacity': 0.15 } });
-      m.addLayer({ id: 'pick-line', type: 'line', source: 'pick', paint: { 'line-color': '#e58a4b', 'line-width': 2, 'line-dasharray': [2, 1] } });
-    }
-  };
+  type Preview = { lon: number; lat: number; n: number; epsg: number; missing: number; cells: { id: string; exists: boolean; geometry: GeoJSON.Polygon }[] };
+  const [preview, setPreview] = useState<Preview | null>(null);
   const [job, setJob] = useState<AreaJob | null>(null);
   const [err, setErr] = useState('');
   useEffect(() => { pickingRef.current = picking; }, [picking]);
-  // keep the download square on the map while picking and while that area downloads
-  useEffect(() => {
-    if (pick) showPick(pick, sizeKm);
-    else if (job?.state === 'running') showPick({ lon: job.lon, lat: job.lat }, job.sizeKm ?? 40);
-    else showPick(null);
-  }, [pick, job, sizeKm]); // eslint-disable-line react-hooks/exhaustive-deps
+  // draw the exact grid cells (orange = will download, grey = already on this computer)
+  const drawCells = (cells: Preview['cells']) => {
+    const m = map.current;
+    try { if (!m || !m.getLayer('outline')) return; } catch { return; }   // map not ready yet, or already removed
+    const data: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: cells.map(c => ({ type: 'Feature', properties: { exists: c.exists }, geometry: c.geometry })) };
+    const src = m.getSource('pick') as maplibregl.GeoJSONSource | undefined;
+    if (src) { src.setData(data); return; }
+    m.addSource('pick', { type: 'geojson', data });
+    m.addLayer({ id: 'pick-fill', type: 'fill', source: 'pick', paint: { 'fill-color': ['case', ['get', 'exists'], '#888888', '#e58a4b'], 'fill-opacity': ['case', ['get', 'exists'], 0.15, 0.3] } });
+    m.addLayer({ id: 'pick-line', type: 'line', source: 'pick', paint: { 'line-color': ['case', ['get', 'exists'], '#bbbbbb', '#e58a4b'], 'line-width': 1.5, 'line-dasharray': [2, 1] } });
+  };
+  useEffect(() => { drawCells(preview?.cells ?? []); }, [preview]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { api.setup().then(s => s.job && setJob(s.job)).catch(() => {}); }, []);
+
+  const download = async (lon: number, lat: number, size: number) => {
+    setErr('');
+    try { setJob(await api.addArea(lon, lat, size)); }
+    catch (e) { setErr((e as Error).message); }
+  };
+  const onPick = async (lon: number, lat: number) => {
+    setErr('');
+    const size = nRef.current;
+    const p = { lon, lat, n: size, ...(await api.areaPreview(lon, lat, size)) };
+    if (size === 1 && p.missing === 1) {           // 1 x 1: add straight away, stay in picking mode for the next click
+      setPreview(p); await download(lon, lat, 1); return;
+    }
+    setPreview(p); setPicking(false);
+  };
 
   const refresh = async () => {
     const m = map.current; if (!m) return;
-    (m.getSource('patches') as maplibregl.GeoJSONSource | undefined)?.setData(await api.consensus());
+    const cons = await api.consensus(); patchesRef.current = cons;
+    (m.getSource('patches') as maplibregl.GeoJSONSource | undefined)?.setData(cons); updateHiRes();
     const M = await fetch('/layers/mosaic.json').then(r => r.json()).catch(() => null);
     const src = m.getSource('radar') as maplibregl.ImageSource | undefined;
     if (M && src) src.updateImage({ url: `/layers/mosaic_hh.png?t=${Date.now()}`, coordinates: M.corners });
     else if (M) { m.addSource('radar', { type: 'image', url: `/layers/mosaic_hh.png?t=${Date.now()}`, coordinates: M.corners }); m.addLayer({ id: 'radar', type: 'raster', source: 'radar' }, 'ai'); }
     api.stats().then(setStats);
   };
-  const startDownload = async () => {
-    if (!pick) return; setErr('');
-    try { setJob({ ...(await api.addArea(pick.lon, pick.lat, sizeKm)), sizeKm }); setPick(null); }
-    catch (e) { setErr((e as Error).message); }
-  };
+
 
   useEffect(() => {
     const m = new maplibregl.Map({ container: 'livemap', style: SAT_STYLE, center: [30.1, 22.8], zoom: 8, maxZoom: 15 });
@@ -81,7 +112,7 @@ export default function LiveMap() {
         m.addSource('radar', { type: 'image', url: `/layers/mosaic_hh.png?t=${Date.now()}`, coordinates: M.corners });
         m.addLayer({ id: 'radar', type: 'raster', source: 'radar', paint: { 'raster-opacity': .9, 'raster-fade-duration': 0 } });
       }
-      m.addSource('patches', { type: 'geojson', data: cons });
+      m.addSource('patches', { type: 'geojson', data: cons }); patchesRef.current = cons;
       const pts = cons.features.flatMap(f => (f.geometry as GeoJSON.Polygon).coordinates[0]);
       if (pts.length) m.fitBounds([[Math.min(...pts.map(p => p[0])), Math.min(...pts.map(p => p[1]))], [Math.max(...pts.map(p => p[0])), Math.max(...pts.map(p => p[1]))]], { padding: 30, duration: 0 });
       m.addLayer({ id: 'ai', type: 'fill', source: 'patches', layout: { visibility: 'none' }, paint: {
@@ -97,12 +128,9 @@ export default function LiveMap() {
         const el = document.createElement('div'); el.className = 'sitelabel'; el.textContent = String(f.properties?.name);
         return new maplibregl.Marker({ element: el, anchor: 'top', offset: [0, 10] }).setLngLat((f.geometry as GeoJSON.Point).coordinates as [number, number]).addTo(m);
       });
+      m.on('moveend', updateHiRes); updateHiRes();
       m.on('click', 'outline', e => { if (!pickingRef.current) setSel(e.features?.[0]?.properties ?? null); });
-      m.on('click', e => {
-        if (!pickingRef.current) return;
-        const p = { lon: +e.lngLat.lng.toFixed(3), lat: +e.lngLat.lat.toFixed(3) };
-        setPick(p); setPicking(false);
-      });
+      m.on('click', e => { if (pickingRef.current) onPick(+e.lngLat.lng.toFixed(5), +e.lngLat.lat.toFixed(5)); });
       m.on('click', 'sites', e => { const p = e.features?.[0]?.properties; if (p) new maplibregl.Popup().setLngLat(e.lngLat).setHTML(`<b>${p.name}</b><br>${p.kind}<br>${p.age_text}<br><i>${p.confidence === 'approximate' ? 'Approximate location' : 'Published location'}</i>`).addTo(m); });
     });
 
@@ -119,7 +147,7 @@ export default function LiveMap() {
     });
     es.addEventListener('area', ev => {
       const j = JSON.parse((ev as MessageEvent).data) as AreaJob; setJob(j);
-      if (j.state === 'done' && j.added) { refresh(); m.flyTo({ center: [j.lon, j.lat], zoom: 9 }); }
+      if (j.state === 'done') { setPreview(null); if (j.added) refresh(); }
     });
     api.stats().then(setStats);
     return () => { es.close(); m.remove(); if (map.current === m) map.current = null; };
@@ -128,6 +156,7 @@ export default function LiveMap() {
   useEffect(() => {
     const m = map.current; if (!m?.isStyleLoaded()) return;
     for (const [id, v] of Object.entries(on)) if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', v ? 'visible' : 'none');
+    radarOn.current = on.radar; updateHiRes();
     labels.current.forEach(mk => { mk.getElement().style.display = on.sites ? '' : 'none'; });
   }, [on]);
 
@@ -156,30 +185,37 @@ export default function LiveMap() {
         </div>
         <div className="card addcard">
           <h2>Add radar for an area</h2>
+          <label className="small">Size
+            <select value={n} onChange={e => { setN(Number(e.target.value)); setPreview(null); }} style={{ marginLeft: 8, background: 'var(--bg)', color: 'var(--fg)', border: '1px solid var(--line)', borderRadius: 4, padding: '3px 6px' }}>
+              {SIZES.map(k => <option key={k} value={k}>{k === 1 ? '1 patch (click to add instantly)' : `${k} × ${k} = ${k * k} patches`}</option>)}
+            </select>
+          </label>
           {job?.state === 'running' ? (
             <>
-              <p className="small">{job.step}… ({job.lon.toFixed(2)}°E, {job.lat.toFixed(2)}°N)</p>
+              <div className="row" style={{ justifyContent: 'space-between' }}>
+                <span className="small">{job.step}…</span>
+                <span className="small muted" style={{ fontVariantNumeric: 'tabular-nums' }}>{job.mbTotal ? `${job.mbDone?.toFixed(1)} / ${job.mbTotal.toFixed(1)} MB` : `${job.pct}%`}</span>
+              </div>
               <div className="bar"><i style={{ width: `${job.pct}%` }} /></div>
-              <p className="muted small">Streaming only a {job.sizeKm ?? 40} × {job.sizeKm ?? 40} km crop from NASA, not the whole 1.6 GB file. Time depends on your connection.</p>
+              <span className="muted small">{job.cells?.length} patch{job.cells?.length === 1 ? '' : 'es'}</span>
             </>
-          ) : pick ? (
+          ) : preview && !picking ? (
             <>
-              <p className="small">Download NISAR radar around <b>{pick.lon}°E, {pick.lat}°N</b>?</p>
-              <label className="small">Size
-                <select value={sizeKm} onChange={e => setSizeKm(Number(e.target.value))} style={{ marginLeft: 8, background: 'var(--bg)', color: 'var(--fg)', border: '1px solid var(--line)', borderRadius: 4, padding: '3px 6px' }}>
-                  {SIZES.map(s => <option key={s.km} value={s.km}>{s.n} × {s.n} = {s.n * s.n} patches ({s.km} km square)</option>)}
-                </select>
-              </label>
-              <p className="muted small">Patches already covered are skipped. The orange square shows exactly what gets downloaded.</p>
-              <div className="row"><button className="primary" onClick={startDownload}>Download this area</button><button onClick={() => setPick(null)}>Cancel</button></div>
+              {preview.missing > 0
+                ? <p className="small"><b>{preview.missing} new patch{preview.missing === 1 ? '' : 'es'}</b> to download{preview.cells.length > preview.missing ? `, ${preview.cells.length - preview.missing} already on this computer (skipped)` : ''}.</p>
+                : <p className="small">You already have {preview.cells.length === 1 ? 'this patch' : `all ${preview.cells.length} patches`} here. Nothing to download.</p>}
+              <div className="row">
+                {preview.missing > 0 && <button className="primary" onClick={() => { download(preview.lon, preview.lat, preview.n); }}>Download {preview.missing} patch{preview.missing === 1 ? '' : 'es'}</button>}
+                <button onClick={() => setPreview(null)}>{preview.missing > 0 ? 'Cancel' : 'Close'}</button>
+              </div>
             </>
           ) : (
             <>
-              <p className="muted small">Pick a spot next to the existing grid and a size. The app downloads that area's radar and adds it for tagging.</p>
-              <button className={picking ? '' : 'primary'} onClick={() => setPicking(!picking)}>{picking ? 'Click on the map… (cancel)' : 'Pick a spot on the map'}</button>
+              <p className="muted small">{n === 1 ? 'Click any 5 km square on the map to add it.' : 'Click where the block should be centred. Squares you already have are skipped.'}</p>
+              <button className={picking ? '' : 'primary'} onClick={() => { setPicking(!picking); setPreview(null); }}>{picking ? 'Stop picking' : 'Pick on the map'}</button>
             </>
           )}
-          {job?.state === 'done' && <p className="ok small">{job.added ? `Added ${job.added} patches.` : job.message ?? 'Done.'}</p>}
+          {job?.state === 'done' && <p className="ok small">{job.added ? `Added ${job.added} patch${job.added === 1 ? '' : 'es'}.` : job.message ?? 'Done.'}</p>}
           {job?.state === 'error' && <p className="no small">{job.message}</p>}
           {err && <p className="no small">{err}</p>}
         </div>

@@ -4,7 +4,7 @@ export type Images = { radar: string; rgb: string; tracer: string; ai: string };
 export type Patch = { id: string; geometry: GeoJSON.Polygon; center: [number, number]; images: Images };
 export type Reveal = { ai: number | null; tracer: number; crowd: { votes: number; channelShare: number | null }; gold: { label: Label; correct: boolean } | null };
 export type Candidate = { id: string; lon: number; lat: number; score: number; votes: number; crowd: number | null; ai: number; nearestSite: string | null; distKm: number | null; why: string[]; images: Images };
-export type AreaJob = { lon: number; lat: number; sizeKm?: number; step: string; pct: number; state: 'running' | 'done' | 'error'; message?: string; added?: number };
+export type AreaJob = { lon: number; lat: number; n?: number; cells?: string[]; mbDone?: number; mbTotal?: number; step: string; pct: number; state: 'running' | 'done' | 'error'; message?: string; added?: number };
 export type Setup = { patchesInDb: number; patchFilesOnDisk: boolean; earthdataLogin: boolean; python: boolean; job: AreaJob | null };
 export type Stats = { patches: number; tags: number; people: number; tagged: number; flagged: number; gold: number };
 
@@ -36,7 +36,9 @@ export const api = {
   stats: () => j<Stats>('/api/stats'),
   metrics: () => j<Record<string, unknown>>('/api/metrics'),
   setup: () => j<Setup>('/api/setup'),
-  addArea: (lon: number, lat: number, sizeKm: number) => j<AreaJob>('/api/areas', { method: 'POST', body: JSON.stringify({ lon, lat, sizeKm }) }),
+  addArea: (lon: number, lat: number, n: number) => j<AreaJob>('/api/areas', { method: 'POST', body: JSON.stringify({ lon, lat, n }) }),
+  areaPreview: (lon: number, lat: number, n: number) =>
+    j<{ epsg: number; missing: number; cells: { id: string; exists: boolean; geometry: GeoJSON.Polygon }[] }>(`/api/areas/preview?lon=${lon}&lat=${lat}&n=${n}`),
 };
 
 // Basemaps. Default: Sentinel-2 cloudless 2020 (EOX), one consistent year everywhere, so lakes and fields don't
