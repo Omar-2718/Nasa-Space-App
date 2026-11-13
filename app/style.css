@@ -51,8 +51,8 @@ body.noswipe .swipe,body.noswipe .tag{display:none}
   .panel{width:auto;max-height:45vh;border-right:0;border-bottom:1px solid var(--line)}
   .mapwrap{min-height:55vh}
 }
-.mapwrap.animate #mapB{transition:clip-path .9s ease}
-.mapwrap.animate .swipe{transition:left .9s ease}
+.mapwrap.animate #mapB{transition:clip-path 1.3s ease-in-out}
+.mapwrap.animate .swipe{transition:left 1.3s ease-in-out}
 .player button:not(.primary){background:none;border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:8px 14px;font:600 13px var(--body);cursor:pointer}
 .player button:disabled{opacity:.4;cursor:default}
 .dots{display:flex;gap:6px}

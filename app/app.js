@@ -44,10 +44,20 @@ function addRivers(map) {
   map.addLayer({ id: 'rivers', type: 'line', source: 'rivers', filter: ['==', ['get', 'kind'], 'channel'], layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: { 'line-color': '#bff3ff', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.2, 13, 3.5] } });
 }
-function showRivers(on) {
-  for (const id of ['valleys', 'rivers-glow', 'rivers']) mapB.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
-  $('#showRivers').checked = on;
+// highlight strength 0..1, faded smoothly via paint transitions
+const FULL = { valleys: ['fill-opacity', .22], 'rivers-glow': ['line-opacity', .55], rivers: ['line-opacity', 1] };
+function setHighlight(h, ms = 900) {
+  for (const [id, [prop, max]] of Object.entries(FULL)) {
+    mapB.setPaintProperty(id, prop + '-transition', { duration: ms, delay: 0 });
+    mapB.setPaintProperty(id, prop, h * max);
+  }
 }
+function showRivers(on, ms) { setHighlight(on ? 1 : 0, ms); $('#showRivers').checked = on; }
+
+// tour choreography helpers; every step bumps `run` so stale timers do nothing
+let run = 0;
+const wait = (ms, id) => new Promise((res, rej) => setTimeout(() => id === run ? res() : rej('stale'), ms));
+async function sweep(id, stops, each = 1700) { for (const p of stops) { setPos(p, true); await wait(each, id); } }
 function setRadar(pol, opacity) {
   const url = `data/radar_${pol}.png`, c = M.radar.corners;
   if (mapB.getSource('radar')) mapB.getSource('radar').updateImage({ url, coordinates: c });
@@ -64,10 +74,10 @@ const TOUR = [
     text: 'This is the Egypt–Sudan border near Bir Safsaf, one of the driest places on Earth. From space it looks like flat sand in every direction.' },
   { title: 'Now look with radar', pos: 0, rivers: false, cam: 'all',
     text: 'NISAR sends 24 cm radio waves. Dry sand is almost transparent to them, so they reach the rock and gravel 1–2 m below and bounce back. The hidden landscape appears.' },
-  { title: 'Rivers under the sand', pos: 0, rivers: true, cam: { center: [29.3, 22.66], zoom: 10.2 },
+  { title: 'Rivers under the sand', pos: 0, rivers: 'pulse', cam: { center: [29.3, 22.66], zoom: 10.2 },
     text: 'The shaded band is a buried river valley, kilometres wide. The blue lines are smaller channels feeding it. Fine sediment in the old riverbeds looks dark to the radar. We traced them automatically. They flowed when the Sahara was green, thousands of years ago.' },
-  { title: 'Invisible to the eye', pos: 50, rivers: true, cam: { center: [29.33, 22.66], zoom: 10.8 },
-    text: 'Drag the white line back and forth. Where the radar shows rivers, the photo shows only featureless sand. Without radar, nobody would know they are there.' },
+  { title: 'Invisible to the eye', pos: 50, rivers: true, sweep: [30, 72, 45], cam: { center: [29.33, 22.66], zoom: 10.8 },
+    text: 'Watch the line move, then drag it yourself. Where the radar shows rivers, the photo shows only featureless sand. Without radar, nobody would know they are there.' },
   { title: '1981 → 2026', pos: 50, rivers: true, cam: 'all',
     text: 'The Space Shuttle first glimpsed these rivers in 1981, on a single flight. NISAR now sees them every 12 days, free for anyone. Next: scan the whole Western Desert for channels nobody has mapped, and point water and archaeology teams to them.' },
 ];
@@ -81,7 +91,16 @@ function goStep(i) {
   $('#stepTitle').textContent = s.title; $('#stepText').textContent = s.text;
   $('#prev').disabled = step === 0; $('#next').textContent = step === TOUR.length - 1 ? 'Explore yourself' : 'Next';
   [...$('#dots').children].forEach((d, k) => d.classList.toggle('on', k === step));
-  setPos(s.pos, true); showRivers(s.rivers); fit(s.cam);
+  const id = ++run;
+  setPos(s.pos, true); fit(s.cam);
+  if (s.rivers === 'pulse') showRivers(false, 300); else showRivers(s.rivers);
+  (async () => {
+    await wait(1900, id);                                  // let the camera land
+    if (s.rivers === 'pulse') {                           // reveal the traced rivers, then hide them so the raw radar shows
+      setHighlight(1, 1000); await wait(3200, id); setHighlight(0, 1200);
+    }
+    if (s.sweep) await sweep(id, s.sweep);
+  })().catch(() => {});
 }
 $('#prev').onclick = () => goStep(step - 1);
 $('#next').onclick = () => step === TOUR.length - 1 ? setView('explore') : goStep(step + 1);
