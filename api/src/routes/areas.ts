@@ -10,7 +10,9 @@ import { broadcast } from '../live.js';
 
 export const areas = Router();
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const PY = process.env.PYTHON ?? ROOT + '.venv/bin/python';
+const PY = process.env.PYTHON ?? ROOT + '.venv' + (process.platform === 'win32' ? '/Scripts/python.exe' : '/bin/python');
+// On Windows, Python 3.11 venv has h5py (Python 3.15 doesn't)
+const PY311 = ROOT + '.venv311' + (process.platform === 'win32' ? '/Scripts/python.exe' : '/bin/python');
 
 type Job = { lon: number; lat: number; n?: number; cells?: string[]; mbDone?: number; mbTotal?: number; step: string; pct: number; state: 'running' | 'done' | 'error'; message?: string; added?: number; started: number };
 let job: Job | null = null;
@@ -22,7 +24,7 @@ areas.get('/setup', async (_req, res) => {
     patchesInDb,
     patchFilesOnDisk: existsSync(ASSETS + '/patches/index.json'),
     earthdataLogin: existsSync(homedir() + '/.netrc'),
-    python: existsSync(PY),
+    python: existsSync(PY) || existsSync(PY311),
     job,
   });
 });
@@ -63,7 +65,7 @@ areas.post('/areas', async (req, res) => {
   const lon = Number(req.body?.lon), lat = Number(req.body?.lat), n = sizeParam(req.body?.n);
   if (!Number.isFinite(lon) || !Number.isFinite(lat) || Math.abs(lat) > 85) return res.status(400).json({ error: 'lon and lat are required' });
   if (job?.state === 'running') return res.status(409).json({ error: 'Another area is downloading. Wait for it to finish.', job });
-  if (!existsSync(PY)) return res.status(500).json({ error: 'Python environment not found (.venv). See README.' });
+  if (!existsSync(PY) && !existsSync(PY311)) return res.status(500).json({ error: 'Python environment not found (.venv or .venv311). See README.' });
 
   const { epsg, cells } = await previewCells(lon, lat, n);
   const missing = cells.filter(c => !c.exists);
@@ -73,7 +75,8 @@ areas.post('/areas', async (req, res) => {
   }
   job = { lon, lat, n, cells: missing.map(c => c.id), step: 'Starting', pct: 1, state: 'running', started: Date.now() };
   broadcast('area', job);
-  const p = spawn(PY, ['-W', 'ignore', 'pipeline/add_area.py', '--epsg', String(epsg), '--cells', missing.map(c => `${c.gx}:${c.gy}`).join(',')],
+  const pythonPath = existsSync(PY) ? PY : PY311;
+  const p = spawn(pythonPath, ['-W', 'ignore', 'pipeline/add_area.py', '--epsg', String(epsg), '--cells', missing.map(c => `${c.gx}:${c.gy}`).join(',')],
     { cwd: ROOT, env: process.env });
   let buf = '';
   p.stdout.on('data', chunk => {

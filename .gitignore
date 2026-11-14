@@ -1,10 +1,24 @@
 .venv/
+.venv311/
 __pycache__/
 # raw NISAR crops (re-downloadable with scripts/crop_gcov.py)
 data/**/*.npz
 data/**/*.npy
 # generated patch images (rebuild with pipeline/make_patches.py, or share as a zip)
 web_assets/
+# The small demo assets are intentionally included for the public deployment.
+!web_assets/
+web_assets/*
+!web_assets/mosaic.json
+!web_assets/mosaic_hh.png
+!web_assets/stretch.json
+!web_assets/channels.geojson
+!web_assets/patches/
+web_assets/patches/*
+!web_assets/patches/index.json
+!web_assets/patches/32636_23_491_radar.png
+!web_assets/patches/32636_23_491_rgb.png
+!web_assets/patches/32636_23_491_tracer.png
 node_modules/
 dist/
 

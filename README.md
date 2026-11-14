@@ -4,6 +4,18 @@ NASA Space Apps 2026, challenge "Dancing with the SARs". NISAR's L-band radar se
 
 Full plan: see `PLAN.md`.
 
+## Deploy a public demo on Railway
+
+This repo is configured to run the web app and API in one container, with PostGIS as a separate persistent service.
+
+1. Push the repository to GitHub, then create a Railway project from that repository. The app service uses the root `Dockerfile`.
+2. Add a second service from the same repository and set its `RAILWAY_DOCKERFILE_PATH` variable to `Dockerfile.postgis`.
+3. On the PostGIS service, set `POSTGRES_DB=beneath`, `POSTGRES_USER=sand`, and a strong alphanumeric `POSTGRES_PASSWORD`. Attach a Railway volume mounted at `/var/lib/postgresql/data`.
+4. On the app service, set `DATABASE_URL` to `postgresql://${{PostGIS.POSTGRES_USER}}:${{PostGIS.POSTGRES_PASSWORD}}@${{PostGIS.RAILWAY_PRIVATE_DOMAIN}}:5432/${{PostGIS.POSTGRES_DB}}`, replacing `PostGIS` with the exact database service name. Set `ADMIN_KEY` to a separate strong secret; do not use the local development default.
+5. Set the app service health check path to `/api/health`, then generate a public domain in Railway.
+
+The current checkout includes one small test patch and its map images for a demo. Raw radar data and the full data pack are not bundled. The app's NASA Earthdata login and area-download flow are deliberately restricted to localhost; visitors to a public Railway deployment can use the bundled demo patch, but cannot add NASA data. Supporting public downloads needs a separate server-side credential and access-control setup. Never put Earthdata credentials in Git or in this README.
+
 ## Install and run (for teammates testing it)
 
 ### 1. What you need

@@ -6,7 +6,7 @@ import { broadcast } from '../live.js';
 
 export const tagging = Router();
 const GOLD_EVERY = 10;                       // about 1 in 10 served patches is a gold (known-answer) patch
-const ADMIN_KEY = process.env.ADMIN_KEY ?? 'sand-admin';
+const ADMIN_KEY = process.env.ADMIN_KEY ?? (process.env.NODE_ENV === 'production' ? '' : 'sand-admin');
 
 type PatchRow = { id: string; geom: string; center: string; tracer_line: number; tracer_valley: number; ai_score: number | null; gold_label: Label | null };
 const PATCH_COLS = `id, ST_AsGeoJSON(geom) AS geom, ST_AsGeoJSON(center) AS center, tracer_line, tracer_valley, ai_score, gold_label`;
@@ -78,7 +78,7 @@ tagging.post('/tags', async (req, res) => {
 
 // Team-only: mark the known answer for a patch (gold set used for the quiz and trust scores).
 tagging.post('/admin/gold', async (req, res) => {
-  if (req.get('x-admin-key') !== ADMIN_KEY) return res.status(403).json({ error: 'wrong admin key' });
+  if (!ADMIN_KEY || req.get('x-admin-key') !== ADMIN_KEY) return res.status(403).json({ error: 'wrong admin key' });
   const { patchId, label } = req.body ?? {};
   if (label !== null && !LABELS.includes(label)) return res.status(400).json({ error: 'bad label' });
   await prisma.patch.update({ where: { id: String(patchId) }, data: { goldLabel: label } });

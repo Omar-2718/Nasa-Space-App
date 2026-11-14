@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import { fileURLToPath } from 'node:url';
 import { prisma, ASSETS } from './db.js';
 import { stream } from './live.js';
 import { tagging } from './routes/tagging.js';
@@ -10,6 +11,7 @@ import { earthdata } from './routes/earthdata.js';
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '100kb' }));
+const WEB_DIST = fileURLToPath(new URL('../../web/dist/', import.meta.url));
 
 // patch images and other generated assets
 app.use('/patches', express.static(ASSETS + '/patches', { maxAge: '1h' }));
@@ -24,6 +26,7 @@ app.use('/api', tagging);
 app.use('/api', maps);
 app.use('/api', areas);
 app.use('/api', earthdata);
+app.use(express.static(WEB_DIST));
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

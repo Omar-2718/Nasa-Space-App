@@ -1,7 +1,7 @@
 // Tag the desert: 60-second guide -> practice quiz (gold patches) -> tagging with an AI/crowd reveal after each answer.
 // Team members open #tag?admin (or /?admin#tag) to label gold patches instead.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import { api, sessionId, SAT_STYLE, pct, type Label, type Patch, type Reveal } from '../api';
 
 const ANSWERS: { label: Label; text: string; key: string; hint: string }[] = [

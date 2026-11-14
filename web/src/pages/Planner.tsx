@@ -1,6 +1,6 @@
 // Field plan: ranked survey targets (crowd + AI + closeness to known sites), map, and KML/GPX/CSV export.
 import { useEffect, useRef, useState } from 'react';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import { api, SAT_STYLE, pct, type Candidate } from '../api';
 
 export default function Planner() {

@@ -1,7 +1,7 @@
 // Live map: buried rivers traced from NISAR radar, highlighted on top of the radar and photo background, plus known sites
 // and on-demand radar downloads.
 import { useEffect, useRef, useState } from 'react';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import EarthdataConnect, { useEarthdata } from '../Earthdata';
 import { api, sessionId, SAT_STYLE, setBasemap, pct, type Stats, type AreaJob, type Basemap, type Label, type Reveal } from '../api';
 

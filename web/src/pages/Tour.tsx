@@ -1,6 +1,6 @@
 // Guided tour: two synced maps (photo | NISAR radar) with a swipe, highlight pulse and slider sweep.
 import { useEffect, useRef, useState } from 'react';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import { SAT_STYLE } from '../api';
 
 type Cam = 'all' | { zoom: number };      // zoomed steps centre on the data's focus point (biggest traced valley)
@@ -19,12 +19,18 @@ const STEPS: Step[] = [
     text: 'In the 1980s field teams dug into these radar channels and found stone hand-axes hundreds of thousands of years old. The Sahara is 9 million km² and nobody can walk all of it. Help us map where to look.' },
 ];
 
-const FULL: Record<string, [string, number]> = { valleys: ['fill-opacity', 0.22], 'rivers-glow': ['line-opacity', 0.55], rivers: ['line-opacity', 1] };
+const FULL = [
+  { id: 'valleys', property: 'fill-opacity', max: 0.22 },
+  { id: 'rivers-glow', property: 'line-opacity', max: 0.55 },
+  { id: 'rivers', property: 'line-opacity', max: 1 },
+] as const;
 
 export default function Tour() {
   const wrap = useRef<HTMLDivElement>(null);
   const maps = useRef<{ a?: maplibregl.Map; b?: maplibregl.Map; bounds?: maplibregl.LngLatBoundsLike; focus?: [number, number] }>({});
   const run = useRef(0);
+  const highlightFrame = useRef(0);
+  const highlightLevel = useRef(0);
   const [step, setStep] = useState(0);
   const [ready, setReady] = useState(false);
   const [missing, setMissing] = useState(false);
@@ -36,10 +42,16 @@ export default function Tour() {
   };
   const setHighlight = (h: number, ms = 900) => {
     const b = maps.current.b; if (!b?.getLayer('rivers')) return;
-    for (const [id, [prop, max]] of Object.entries(FULL)) {
-      b.setPaintProperty(id, `${prop}-transition`, { duration: ms, delay: 0 });
-      b.setPaintProperty(id, prop, h * max);
-    }
+    if (highlightFrame.current) cancelAnimationFrame(highlightFrame.current);
+    const from = highlightLevel.current, start = performance.now();
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - start) / Math.max(ms, 1));
+      const level = from + (h - from) * progress;
+      for (const { id, property, max } of FULL) b.setPaintProperty(id, property, level * max);
+      highlightLevel.current = level;
+      highlightFrame.current = progress < 1 ? requestAnimationFrame(tick) : 0;
+    };
+    highlightFrame.current = requestAnimationFrame(tick);
   };
 
   useEffect(() => {
@@ -78,7 +90,7 @@ export default function Tour() {
     const move = (e: PointerEvent) => { if (!drag) return; const r = wrap.current!.getBoundingClientRect(); setPos((e.clientX - r.left) / r.width * 100, false); };
     const up = () => { drag = false; };
     h.addEventListener('pointerdown', down); h.addEventListener('pointermove', move); h.addEventListener('pointerup', up);
-    return () => { run.current++; a.remove(); b.remove(); };
+    return () => { run.current++; if (highlightFrame.current) cancelAnimationFrame(highlightFrame.current); a.remove(); b.remove(); };
   }, []);
 
   useEffect(() => {

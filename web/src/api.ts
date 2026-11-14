@@ -1,3 +1,5 @@
+import type { Map, StyleSpecification } from 'maplibre-gl';
+
 // Thin client for the Express API. Session id lives in localStorage so a person keeps their trust score.
 export type Label = 'channel' | 'site_feature' | 'nothing' | 'unsure';
 export type Images = { radar: string; rgb: string; tracer: string; ai: string };
@@ -43,7 +45,7 @@ export const api = {
 
 // Basemaps. Default: Sentinel-2 cloudless 2020 (EOX), one consistent year everywhere, so lakes and fields don't
 // change as you zoom. Esri World Imagery is sharper but mixes photos from many years (Toshka lakes appear and vanish).
-export const SAT_STYLE: maplibregl.StyleSpecification = {
+export const SAT_STYLE: StyleSpecification = {
   version: 8,
   sources: {
     s2: {
@@ -63,7 +65,7 @@ export const SAT_STYLE: maplibregl.StyleSpecification = {
   ],
 };
 export type Basemap = 's2' | 'esri';
-export function setBasemap(m: maplibregl.Map, b: Basemap) {
+export function setBasemap(m: Map, b: Basemap) {
   m.setLayoutProperty('s2', 'visibility', b === 's2' ? 'visible' : 'none');
   m.setLayoutProperty('esri', 'visibility', b === 'esri' ? 'visible' : 'none');
 }
